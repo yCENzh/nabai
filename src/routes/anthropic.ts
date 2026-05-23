@@ -1,0 +1,115 @@
+import { HttpError, generateId } from '../core/utils';
+import type { Provider } from '../providers/base';
+import { AnthropicProtocolAdapter } from '../protocols/anthropic';
+import { GeminiProvider } from '../providers/gemini';
+import { OpenAICompatProvider } from '../providers/openai-compat';
+import { AnthropicProvider } from '../providers/anthropic';
+import { getRandomApiKey } from '../pool/key-pool';
+import { getEndpointConfig, getProviderConfig } from '../core/router';
+
+const anthropicAdapter = new AnthropicProtocolAdapter();
+const geminiProvider = new GeminiProvider();
+
+export async function handleAnthropicMessages(
+	request: Request,
+	env: { AUTH_KEY: string },
+	sql: DurableObjectStorage['sql'],
+	endpointId: string = 'default'
+): Promise<Response> {
+	const requestId = 'msg_' + generateId();
+
+	const apiKeyHeader = request.headers.get('x-api-key');
+	const authHeader = request.headers.get('Authorization');
+	let apiKey: string | null = apiKeyHeader || (authHeader?.replace('Bearer ', '') ?? null);
+
+	if (!apiKey) {
+		return anthropicAdapter.renderError(
+			new HttpError('No API key found in the client headers', 401),
+			{ requestId }
+		);
+	}
+
+	// Resolve endpoint → provider config
+	let provider: Provider = geminiProvider;
+	let forwardClientKey = false;
+	const endpoint = await getEndpointConfig(sql, endpointId);
+	if (endpoint) {
+		const provConfig = await getProviderConfig(sql, endpoint.provider_id);
+		if (!provConfig) {
+			return anthropicAdapter.renderError(
+				new HttpError(`Provider "${endpoint.provider_id}" is disabled or not found.`, 503),
+				{ requestId }
+			);
+		}
+		try {
+			const cfg = JSON.parse(provConfig.config_json);
+			forwardClientKey = cfg.forward_client_key === true;
+		} catch {}
+		if (provConfig.type === 'openai_compat') {
+			provider = new OpenAICompatProvider(provConfig.base_url);
+		} else if (provConfig.type === 'anthropic') {
+			provider = new AnthropicProvider(provConfig.base_url);
+		}
+	}
+
+	// Auth: forward_client_key → use client's key directly; otherwise → verify AUTH_KEY, use pool key
+	if (!forwardClientKey && env.AUTH_KEY) {
+		if (apiKey !== env.AUTH_KEY) {
+			return anthropicAdapter.renderError(
+				new HttpError('Unauthorized', 401),
+				{ requestId }
+			);
+		}
+		const providerId = endpoint?.provider_id;
+		apiKey = await getRandomApiKey(sql, providerId);
+		if (!apiKey) {
+			return anthropicAdapter.renderError(
+				new HttpError('No API keys configured in the load balancer.', 500),
+				{ requestId }
+			);
+		}
+	}
+
+	try {
+		const canonical = await anthropicAdapter.parseRequest(request, { requestId });
+		const isStream = canonical.stream ?? false;
+
+		if (!isStream) {
+			const { response: upstreamResp } = await provider.invoke(canonical, { apiKey });
+			if (!upstreamResp.ok) {
+				const errText = await upstreamResp.text();
+				console.error('Upstream error:', errText);
+				return anthropicAdapter.renderError(
+					new HttpError(`Upstream error: ${upstreamResp.status}`, upstreamResp.status),
+					{ requestId }
+				);
+			}
+			const data: any = await upstreamResp.json();
+			if (provider.type === 'gemini' && !data.candidates) {
+				return anthropicAdapter.renderError(
+					new HttpError('Invalid response from upstream', 502),
+					{ requestId }
+				);
+			}
+			const canonicalResp = provider.parseResponse(data, canonical);
+			return anthropicAdapter.renderJson(canonicalResp, { requestId });
+		}
+
+		// Streaming
+		const { response: upstreamResp } = await provider.invoke(canonical, { apiKey });
+		if (!upstreamResp.ok) {
+			const errText = await upstreamResp.text();
+			console.error('Upstream error:', errText);
+			return anthropicAdapter.renderError(
+				new HttpError(`Upstream error: ${upstreamResp.status}`, upstreamResp.status),
+				{ requestId }
+			);
+		}
+
+		const events = provider.parseStream(upstreamResp, canonical);
+		return anthropicAdapter.renderStream(events, { requestId });
+	} catch (err) {
+		console.error('Anthropic handler error:', err);
+		return anthropicAdapter.renderError(err, { requestId });
+	}
+}

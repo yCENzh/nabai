@@ -1,0 +1,428 @@
+import { HttpError, BASE_URL, API_VERSION, makeHeaders } from '../core/utils';
+import type { CanonicalRequest, CanonicalResponse, CanonicalStreamEvent } from '../core/types';
+import type { Provider, ProviderContext } from './base';
+
+const HARM_CATEGORIES = [
+	'HARM_CATEGORY_HATE_SPEECH',
+	'HARM_CATEGORY_SEXUALLY_EXPLICIT',
+	'HARM_CATEGORY_DANGEROUS_CONTENT',
+	'HARM_CATEGORY_HARASSMENT',
+	'HARM_CATEGORY_CIVIC_INTEGRITY',
+];
+
+export function transformConfig(req: any) {
+	const fieldsMap: Record<string, string> = {
+		frequency_penalty: 'frequencyPenalty',
+		max_completion_tokens: 'maxOutputTokens',
+		max_tokens: 'maxOutputTokens',
+		n: 'candidateCount',
+		presence_penalty: 'presencePenalty',
+		seed: 'seed',
+		stop: 'stopSequences',
+		temperature: 'temperature',
+		top_k: 'topK',
+		top_p: 'topP',
+	};
+
+	const thinkingBudgetMap: Record<string, number> = {
+		low: 1024,
+		medium: 8192,
+		high: 24576,
+	};
+
+	let cfg: any = {};
+	for (let key in req) {
+		const matchedKey = fieldsMap[key];
+		if (matchedKey) {
+			cfg[matchedKey] = req[key];
+		}
+	}
+
+	if (req.response_format) {
+		switch (req.response_format.type) {
+			case 'json_schema':
+				cfg.responseSchema = req.response_format.json_schema?.schema;
+				if (cfg.responseSchema && 'enum' in cfg.responseSchema) {
+					cfg.responseMimeType = 'text/x.enum';
+					break;
+				}
+				// json_schema without enum → fall through to set application/json
+			case 'json_object':
+				cfg.responseMimeType = 'application/json';
+				break;
+			case 'text':
+				cfg.responseMimeType = 'text/plain';
+				break;
+			default:
+				throw new HttpError('Unsupported response_format.type', 400);
+		}
+	}
+	if (req.reasoning_effort) {
+		cfg.thinkingConfig = { thinkingBudget: thinkingBudgetMap[req.reasoning_effort] };
+	}
+
+	return cfg;
+}
+
+export async function transformMessages(messages: any[]) {
+	if (!messages) {
+		return {};
+	}
+
+	const contents: any[] = [];
+	let system_instruction;
+
+	for (const item of messages) {
+		switch (item.role) {
+			case 'system':
+				system_instruction = { parts: await transformMsg(item) };
+				continue;
+			case 'assistant':
+				item.role = 'model';
+				break;
+			case 'user':
+				break;
+			default:
+				throw new HttpError(`Unknown message role: "${item.role}"`, 400);
+		}
+
+		if (system_instruction) {
+			if (!contents[0]?.parts || (Array.isArray(contents[0]?.parts) && !contents[0]?.parts.some((part: any) => part.text))) {
+				contents.unshift({ role: 'user', parts: [{ text: ' ' }] });
+			}
+		}
+
+		contents.push({
+			role: item.role,
+			parts: await transformMsg(item),
+		});
+	}
+
+	return { system_instruction, contents };
+}
+
+export async function transformMsg({ content }: any) {
+	const parts = [];
+	if (!Array.isArray(content)) {
+		parts.push({ text: content });
+		return parts;
+	}
+
+	for (const item of content) {
+		switch (item.type) {
+			case 'text':
+				parts.push({ text: item.text });
+				break;
+			case 'image_url':
+				parts.push(await parseImg(item.image_url.url));
+				break;
+			case 'input_audio':
+				parts.push({
+					inlineData: {
+						mimeType: 'audio/' + item.input_audio.format,
+						data: item.input_audio.data,
+					},
+				});
+				break;
+			default:
+				throw new HttpError(`Unknown "content" item type: "${item.type}"`, 400);
+		}
+	}
+
+	if (content.every((item) => item.type === 'image_url')) {
+		parts.push({ text: '' });
+	}
+	return parts;
+}
+
+export async function parseImg(url: any) {
+	let mimeType, data;
+	if (url.startsWith('http://') || url.startsWith('https://')) {
+		try {
+			const response = await fetch(url);
+			if (!response.ok) {
+				throw new Error(`${response.status} ${response.statusText} (${url})`);
+			}
+			mimeType = response.headers.get('content-type');
+			data = Buffer.from(await response.arrayBuffer()).toString('base64');
+		} catch (err) {
+			throw new Error('Error fetching image: ' + (err as Error).message);
+		}
+	} else {
+		const match = url.match(/^data:(?<mimeType>.*?)(;base64)?,(?<data>.*)$/);
+		if (!match) {
+			throw new HttpError('Invalid image data: ' + url, 400);
+		}
+		({ mimeType, data } = match.groups);
+	}
+	return {
+		inlineData: {
+			mimeType,
+			data,
+		},
+	};
+}
+
+export function adjustSchema(schema: any) {
+	const obj = schema[schema.type];
+	delete obj.strict;
+	return adjustProps(schema);
+}
+
+export function adjustProps(schemaPart: any) {
+	if (typeof schemaPart !== 'object' || schemaPart === null) {
+		return;
+	}
+	if (Array.isArray(schemaPart)) {
+		schemaPart.forEach((item) => adjustProps(item));
+	} else {
+		if (schemaPart.type === 'object' && schemaPart.properties && schemaPart.additionalProperties === false) {
+			delete schemaPart.additionalProperties;
+		}
+		Object.values(schemaPart).forEach((item) => adjustProps(item));
+	}
+}
+
+export function transformTools(req: any) {
+	let tools, tool_config;
+	if (req.tools) {
+		const funcs = req.tools.filter((tool: any) => tool.type === 'function' && tool.function?.name !== 'googleSearch');
+		if (funcs.length > 0) {
+			funcs.forEach(adjustSchema);
+			tools = [{ function_declarations: funcs.map((schema: any) => schema.function) }];
+		}
+	}
+	if (req.tool_choice) {
+		const allowed_function_names = req.tool_choice?.type === 'function' ? [req.tool_choice?.function?.name] : undefined;
+		if (allowed_function_names || typeof req.tool_choice === 'string') {
+			tool_config = {
+				function_calling_config: {
+					mode: allowed_function_names ? 'ANY' : req.tool_choice.toUpperCase(),
+					allowed_function_names,
+				},
+			};
+		}
+	}
+	return { tools, tool_config };
+}
+
+export function parseThinkingParts(parts: any[]): { reasoningContent: string; finalContent: string } {
+	let reasoningContent = '';
+	let finalContent = '';
+	for (const part of parts) {
+		if (!part.text) continue;
+		const isThought =
+			part.thoughtToken ||
+			part.thought ||
+			part.thoughtTokens ||
+			(part.executableCode && part.executableCode.language === 'thought') ||
+			(part.text && (part.text.startsWith('<thinking>') || part.text.startsWith('思考：') || part.text.startsWith('Thinking:')));
+		if (isThought) {
+			let cleanText = part.text;
+			if (cleanText.startsWith('<thinking>')) {
+				cleanText = cleanText.replace('<thinking>', '').replace('</thinking>', '');
+			} else if (cleanText.startsWith('思考：')) {
+				cleanText = cleanText.replace('思考：', '');
+			} else if (cleanText.startsWith('Thinking:')) {
+				cleanText = cleanText.replace('Thinking:', '');
+			}
+			reasoningContent += cleanText;
+		} else {
+			finalContent += part.text;
+		}
+	}
+	return { reasoningContent, finalContent };
+}
+
+export async function transformRequest(req: any) {
+	const safetySettings = HARM_CATEGORIES.map((category) => ({
+		category,
+		threshold: 'BLOCK_NONE',
+	}));
+
+	return {
+		...(await transformMessages(req.messages)),
+		safetySettings,
+		generationConfig: transformConfig(req),
+		...transformTools(req),
+		cachedContent: undefined as any,
+	};
+}
+
+// ─── GeminiProvider: Canonical IR → Gemini native ───
+
+const GEMINI_REASONS_MAP: Record<string, string> = {
+	STOP: 'stop',
+	MAX_TOKENS: 'length',
+	SAFETY: 'content_filter',
+	RECITATION: 'content_filter',
+};
+
+export class GeminiProvider implements Provider {
+	readonly type = 'gemini';
+
+	parseResponse(data: any, req: CanonicalRequest): CanonicalResponse {
+		const id = 'chatcmpl-' + Math.random().toString(36).substring(2, 15);
+		const model = data.modelVersion ?? req.model;
+
+		return {
+			id,
+			model,
+			choices: (data.candidates ?? []).map((cand: any) => {
+				const { reasoningContent, finalContent } = parseThinkingParts(cand.content?.parts ?? []);
+				return {
+					index: cand.index || 0,
+					message: {
+						role: 'assistant' as const,
+						content: finalContent || null,
+						...(reasoningContent ? { reasoning_content: reasoningContent } : {}),
+					},
+					finish_reason: GEMINI_REASONS_MAP[cand.finishReason] || cand.finishReason,
+				};
+			}),
+		};
+	}
+
+	parseStream(response: Response, req: CanonicalRequest): AsyncIterable<CanonicalStreamEvent> {
+		return streamToCanonical(response, req);
+	}
+
+	/** Full invoke: transform CanonicalRequest → Gemini native, fetch, parse response */
+	async invoke(req: CanonicalRequest, ctx: ProviderContext): Promise<{ response: Response }> {
+		const rawReq: any = {
+			model: req.model,
+			messages: req.messages,
+			tools: req.tools,
+			tool_choice: req.tool_choice,
+			temperature: req.temperature,
+			top_p: req.top_p,
+			max_tokens: req.max_tokens,
+			stream: req.stream,
+			...(req.metadata as any),
+		};
+
+		let model = 'gemini-2.5-flash';
+		if (typeof req.model === 'string') {
+			if (req.model.startsWith('models/')) {
+				model = req.model.substring(7);
+			} else if (req.model.startsWith('gemini-') || req.model.startsWith('gemma-') || req.model.startsWith('learnlm-')) {
+				model = req.model;
+			}
+		}
+
+		let body = await transformRequest(rawReq);
+		const extra = (req.metadata as any)?.extra_body?.google;
+		if (extra) {
+			if (extra.safety_settings) body.safetySettings = extra.safety_settings;
+			if (extra.cached_content) body.cachedContent = extra.cached_content;
+			if (extra.thinking_config) body.generationConfig.thinkingConfig = extra.thinking_config;
+		}
+
+		if (
+			model.endsWith(':search') ||
+			req.model.endsWith('-search-preview') ||
+			req.tools?.some((tool: any) => tool.function?.name === 'googleSearch')
+		) {
+			if (model.endsWith(':search')) model = model.substring(0, model.length - 7);
+			body.tools = body.tools || [];
+			body.tools.push({ function_declarations: [{ name: 'googleSearch', parameters: {} }] });
+		}
+
+		const isStream = req.stream ?? false;
+		const TASK = isStream ? 'streamGenerateContent' : 'generateContent';
+		let url = `${BASE_URL}/${API_VERSION}/models/${model}:${TASK}`;
+		if (isStream) url += '?alt=sse';
+
+		const response = await fetch(url, {
+			method: 'POST',
+			headers: makeHeaders(ctx.apiKey, { 'Content-Type': 'application/json' }),
+			body: JSON.stringify(body),
+		});
+
+		return { response };
+	}
+}
+
+/** Convert Gemini SSE stream to AsyncIterable<CanonicalStreamEvent> */
+async function* streamToCanonical(response: Response, req: CanonicalRequest): AsyncIterable<CanonicalStreamEvent> {
+	const reader = response.body!.pipeThrough(new TextDecoderStream()).getReader();
+	let buffer = '';
+	let lastTexts: Record<number, string> = {};
+	let lastReasoning: Record<number, string> = {};
+
+	while (true) {
+		const { done, value } = await reader.read();
+		if (done) break;
+		buffer += value;
+		const lines = buffer.split('\n');
+		buffer = lines.pop()!;
+
+		for (const line of lines) {
+			if (!line.startsWith('data: ')) continue;
+			const data = line.substring(6);
+			if (!data.startsWith('{')) continue;
+
+			let parsed: any;
+			try { parsed = JSON.parse(data); } catch { continue; }
+
+			if (parsed.candidates) {
+				for (const cand of parsed.candidates) {
+					const { index, content, finishReason } = cand;
+					const parts = content?.parts ?? [];
+					const { reasoningContent, finalContent } = parseThinkingParts(parts);
+
+					if (reasoningContent) {
+						const last = lastReasoning[index] || '';
+						let delta = '';
+						if (reasoningContent.startsWith(last)) {
+							delta = reasoningContent.substring(last.length);
+						} else {
+							let i = 0;
+							while (i < reasoningContent.length && i < last.length && reasoningContent[i] === last[i]) i++;
+							delta = reasoningContent.substring(i);
+						}
+						lastReasoning[index] = reasoningContent;
+						if (delta) yield { type: 'reasoning_delta', text: delta };
+					}
+
+					if (finalContent) {
+						const last = lastTexts[index] || '';
+						let delta = '';
+						if (finalContent.startsWith(last)) {
+							delta = finalContent.substring(last.length);
+						} else {
+							let i = 0;
+							while (i < finalContent.length && i < last.length && finalContent[i] === last[i]) i++;
+							delta = finalContent.substring(i);
+						}
+						lastTexts[index] = finalContent;
+						if (delta) yield { type: 'text_delta', text: delta };
+					}
+
+					if (finishReason) {
+						yield { type: 'done', finishReason: GEMINI_REASONS_MAP[finishReason] || finishReason };
+					}
+				}
+			}
+		}
+	}
+
+	// Handle remaining buffer
+	if (buffer.startsWith('data: ')) {
+		const data = buffer.substring(6);
+		if (data.startsWith('{')) {
+			try {
+				const parsed = JSON.parse(data);
+				if (parsed.candidates) {
+					for (const cand of parsed.candidates) {
+						const { content, finishReason } = cand;
+						const parts = content?.parts ?? [];
+						const { finalContent } = parseThinkingParts(parts);
+						if (finalContent) yield { type: 'text_delta', text: finalContent };
+						if (finishReason) yield { type: 'done', finishReason: GEMINI_REASONS_MAP[finishReason] || finishReason };
+					}
+				}
+			} catch {}
+		}
+	}
+}
