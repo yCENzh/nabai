@@ -122,12 +122,15 @@ export class AnthropicProvider implements Provider {
 }
 
 async function* anthropicStreamToCanonical(response: Response): AsyncIterable<CanonicalStreamEvent> {
+	console.log('[anthropic-stream] upstream status:', response.status);
 	const reader = response.body!.pipeThrough(new TextDecoderStream()).getReader();
 	let buffer = '';
+	let chunkCount = 0;
 
 	while (true) {
 		const { done, value } = await reader.read();
-		if (done) break;
+		if (done) { console.log('[anthropic-stream] upstream closed after', chunkCount, 'chunks, buffer:', buffer.length, 'bytes'); break; }
+		chunkCount++;
 		buffer += value;
 		const lines = buffer.split('\n');
 		buffer = lines.pop()!;
@@ -147,9 +150,11 @@ async function* anthropicStreamToCanonical(response: Response): AsyncIterable<Ca
 					yield { type: 'reasoning_delta', text: parsed.delta.thinking };
 				}
 			} else if (parsed.type === 'message_stop') {
+				console.log('[anthropic-stream] got message_stop');
 				yield { type: 'done' };
 				return;
 			} else if (parsed.type === 'error') {
+				console.log('[anthropic-stream] upstream error:', parsed.error);
 				yield { type: 'error', code: parsed.error?.type ?? 'api_error', message: parsed.error?.message ?? 'Unknown error' };
 				return;
 			}

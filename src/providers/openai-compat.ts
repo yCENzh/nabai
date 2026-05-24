@@ -61,12 +61,15 @@ export class OpenAICompatProvider implements Provider {
 }
 
 async function* openaiStreamToCanonical(response: Response): AsyncIterable<CanonicalStreamEvent> {
+	console.log('[stream] upstream status:', response.status, 'headers:', JSON.stringify(Object.fromEntries(response.headers)));
 	const reader = response.body!.pipeThrough(new TextDecoderStream()).getReader();
 	let buffer = '';
+	let chunkCount = 0;
 
 	while (true) {
 		const { done, value } = await reader.read();
-		if (done) break;
+		if (done) { console.log('[stream] upstream closed after', chunkCount, 'chunks, buffer:', buffer.length, 'bytes'); break; }
+		chunkCount++;
 		buffer += value;
 		const lines = buffer.split('\n');
 		buffer = lines.pop()!;
@@ -75,6 +78,7 @@ async function* openaiStreamToCanonical(response: Response): AsyncIterable<Canon
 			if (!line.startsWith('data: ')) continue;
 			const data = line.substring(6).trim();
 			if (data === '[DONE]') {
+				console.log('[stream] got [DONE]');
 				yield { type: 'done' };
 				return;
 			}
@@ -85,7 +89,7 @@ async function* openaiStreamToCanonical(response: Response): AsyncIterable<Canon
 				if (!choice) continue;
 				if (choice.delta?.content) yield { type: 'text_delta', text: choice.delta.content };
 				if (choice.delta?.reasoning_content) yield { type: 'reasoning_delta', text: choice.delta.reasoning_content };
-				if (choice.finish_reason) yield { type: 'done', finishReason: choice.finish_reason };
+				if (choice.finish_reason) { console.log('[stream] finish_reason:', choice.finish_reason); yield { type: 'done', finishReason: choice.finish_reason }; }
 			} catch {}
 		}
 	}

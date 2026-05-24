@@ -210,6 +210,7 @@ async function handleCompletions(request: Request, apiKey: string, provider: Pro
 	// Streaming
 	try {
 		const { response } = await provider.invoke(canonical, { apiKey });
+		console.log('[proxy] upstream response status:', response.status, 'type:', provider.type);
 		if (!response.ok) {
 			const errText = await response.text();
 			console.error('Upstream error:', errText);
