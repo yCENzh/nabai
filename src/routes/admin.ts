@@ -65,7 +65,6 @@ export async function handleApiKeys(request: Request, sql: DurableObjectStorage[
 		for (const key of keys) {
 			const keyId = crypto.randomUUID();
 			sql.exec('INSERT OR IGNORE INTO api_keys (id, provider_id, model, api_key, health_check_enabled) VALUES (?, ?, ?, ?, ?)', keyId, provider_id, mdl, key, hce);
-			sql.exec('INSERT OR IGNORE INTO api_key_statuses (api_key) VALUES (?)', key);
 		}
 
 		return jsonResponse({ message: 'API密钥添加成功。' });
@@ -106,7 +105,6 @@ export async function handleDeleteApiKeys(request: Request, sql: DurableObjectSt
 			const batch = keys.slice(i, i + batchSize);
 			const placeholders = batch.map(() => '?').join(',');
 			sql.exec(`DELETE FROM api_keys WHERE api_key IN (${placeholders})`, ...batch);
-			sql.exec(`DELETE FROM api_key_statuses WHERE api_key IN (${placeholders})`, ...batch);
 		}
 
 		return jsonResponse({ message: 'API密钥删除成功。' });
@@ -190,12 +188,12 @@ export async function handleApiKeysCheck(request: Request, sql: DurableObjectSto
 		for (const result of checkResults) {
 			if (result.valid) {
 				sql.exec(
-					"UPDATE api_key_statuses SET status = 'normal', key_group = 'normal', failed_count = 0, last_checked_at = ? WHERE api_key = ?",
+					"UPDATE api_keys SET status = 'normal', key_group = 'normal', failed_count = 0, last_checked_at = ? WHERE api_key = ?",
 					Date.now(), result.key
 				);
 			} else {
 				sql.exec(
-					"UPDATE api_key_statuses SET status = 'abnormal', key_group = 'abnormal', failed_count = failed_count + 1, last_checked_at = ? WHERE api_key = ?",
+					"UPDATE api_keys SET status = 'abnormal', key_group = 'abnormal', failed_count = failed_count + 1, last_checked_at = ? WHERE api_key = ?",
 					Date.now(), result.key
 				);
 			}
@@ -215,14 +213,13 @@ export async function getAllApiKeys(request: Request, sql: DurableObjectStorage[
 		const pageSize = parseInt(url.searchParams.get('pageSize') || '50', 10);
 		const offset = (page - 1) * pageSize;
 
-		const totalResult = sql.exec('SELECT COUNT(*) as count FROM api_key_statuses').raw<any>();
+		const totalResult = sql.exec('SELECT COUNT(*) as count FROM api_keys').raw<any>();
 		const totalArray = Array.from(totalResult);
 		const total = totalArray.length > 0 ? totalArray[0][0] : 0;
 
 		const results = sql
-			.exec(`SELECT k.api_key, s.status, s.key_group, s.last_checked_at, s.failed_count, k.provider_id, k.model, k.health_check_enabled, k.enabled
-				   FROM api_key_statuses s
-				   LEFT JOIN api_keys k ON k.api_key = s.api_key
+			.exec(`SELECT api_key, status, key_group, last_checked_at, failed_count, provider_id, model, health_check_enabled, enabled
+				   FROM api_keys
 				   LIMIT ? OFFSET ?`, pageSize, offset)
 			.raw<any>();
 		const keys = results
@@ -315,7 +312,6 @@ export async function handleRestore(request: Request, sql: DurableObjectStorage[
 			return jsonResponse({ error: '格式无效：需要 providers, keys, endpoints 数组' }, 400);
 		}
 
-		sql.exec('DELETE FROM api_key_statuses');
 		sql.exec('DELETE FROM api_keys');
 		sql.exec('DELETE FROM providers');
 		sql.exec('DELETE FROM endpoints');
@@ -335,7 +331,6 @@ export async function handleRestore(request: Request, sql: DurableObjectStorage[
 				'INSERT INTO api_keys (id, provider_id, model, api_key, enabled, health_check_enabled) VALUES (?, ?, ?, ?, ?, ?)',
 				keyId, k.provider_id ?? '', k.model ?? '', k.api_key, k.enabled !== false ? 1 : 0, k.health_check_enabled !== false ? 1 : 0
 			);
-			sql.exec('INSERT OR IGNORE INTO api_key_statuses (api_key) VALUES (?)', k.api_key);
 		}
 
 		for (const ep of data.endpoints) {

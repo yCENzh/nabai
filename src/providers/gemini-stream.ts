@@ -1,11 +1,4 @@
-import { parseThinkingParts } from './gemini';
-
-const REASONS_MAP: Record<string, string> = {
-	STOP: 'stop',
-	MAX_TOKENS: 'length',
-	SAFETY: 'content_filter',
-	RECITATION: 'content_filter',
-};
+import { parseThinkingParts, GEMINI_REASONS_MAP } from './gemini';
 
 /** SSE parser: accumulates text chunks, emits parsed JSON objects */
 export function parseStream(this: any, chunk: string, controller: any) {
@@ -132,7 +125,7 @@ export function toOpenAiStream(this: any, line: any, controller: any) {
 						{
 							index,
 							delta: {},
-							finish_reason: REASONS_MAP[finishReason] || finishReason,
+							finish_reason: GEMINI_REASONS_MAP[finishReason] || finishReason,
 						},
 					],
 				};

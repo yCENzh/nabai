@@ -46,7 +46,6 @@ export class AnthropicProtocolAdapter implements ProtocolAdapter {
 			messages!.push({
 				role: msg.role === 'assistant' ? 'assistant' : 'user',
 				content,
-				...(msg.role === 'assistant' ? {} : {}),
 			});
 		}
 

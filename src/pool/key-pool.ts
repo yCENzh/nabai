@@ -2,13 +2,13 @@ import { maskKey } from '../core/utils';
 
 export async function getRandomApiKey(sql: DurableObjectStorage['sql'], providerId?: string): Promise<string | null> {
 	try {
-		const join = providerId
-			? 'JOIN api_keys k ON k.api_key = s.api_key AND k.provider_id = ? AND k.enabled = 1'
-			: 'JOIN api_keys k ON k.api_key = s.api_key AND k.enabled = 1';
+		const where = providerId
+			? 'WHERE provider_id = ? AND enabled = 1'
+			: 'WHERE enabled = 1';
 		const params = providerId ? [providerId] : [];
 
 		let results = sql
-			.exec(`SELECT s.api_key FROM api_key_statuses s ${join} WHERE s.key_group = 'normal' ORDER BY RANDOM() LIMIT 1`, ...params)
+			.exec(`SELECT api_key FROM api_keys ${where} AND key_group = 'normal' ORDER BY RANDOM() LIMIT 1`, ...params)
 			.raw<any>();
 		let keys = Array.from(results);
 		if (keys && keys.length > 0) {
@@ -18,7 +18,7 @@ export async function getRandomApiKey(sql: DurableObjectStorage['sql'], provider
 		}
 
 		results = sql
-			.exec(`SELECT s.api_key FROM api_key_statuses s ${join} WHERE s.key_group = 'abnormal' ORDER BY RANDOM() LIMIT 1`, ...params)
+			.exec(`SELECT api_key FROM api_keys ${where} AND key_group = 'abnormal' ORDER BY RANDOM() LIMIT 1`, ...params)
 			.raw<any>();
 		keys = Array.from(results);
 		if (keys && keys.length > 0) {
@@ -120,7 +120,7 @@ export async function runHealthCheck(sql: DurableObjectStorage['sql']) {
 
 	// 1. Handle abnormal keys
 	const abnormalKeys = await sql
-		.exec("SELECT api_key, failed_count FROM api_key_statuses WHERE key_group = 'abnormal'")
+		.exec("SELECT api_key, failed_count FROM api_keys WHERE key_group = 'abnormal'")
 		.raw<any>();
 
 	for (const row of Array.from(abnormalKeys)) {
@@ -128,19 +128,18 @@ export async function runHealthCheck(sql: DurableObjectStorage['sql']) {
 		const failedCount = row[1] as number;
 		const provider = keyProviderMap.get(apiKey);
 
-		if (!provider) continue; // no provider info or health check disabled → skip
+		if (!provider) continue;
 
 		const ok = await checkKey(apiKey, provider.type, provider.baseUrl, provider.model);
 		if (ok) {
 			await sql.exec(
-				"UPDATE api_key_statuses SET key_group = 'normal', failed_count = 0, last_checked_at = ? WHERE api_key = ?",
+				"UPDATE api_keys SET key_group = 'normal', failed_count = 0, last_checked_at = ? WHERE api_key = ?",
 				Date.now(), apiKey
 			);
 		} else {
-			const newFailedCount = failedCount + 1;
 			await sql.exec(
-				'UPDATE api_key_statuses SET failed_count = ?, last_checked_at = ? WHERE api_key = ?',
-				newFailedCount, Date.now(), apiKey
+				'UPDATE api_keys SET failed_count = ?, last_checked_at = ? WHERE api_key = ?',
+				failedCount + 1, Date.now(), apiKey
 			);
 		}
 	}
@@ -149,7 +148,7 @@ export async function runHealthCheck(sql: DurableObjectStorage['sql']) {
 	const twelveHoursAgo = Date.now() - 12 * 60 * 60 * 1000;
 	const normalKeys = await sql
 		.exec(
-			"SELECT api_key FROM api_key_statuses WHERE key_group = 'normal' AND (last_checked_at IS NULL OR last_checked_at < ?)",
+			"SELECT api_key FROM api_keys WHERE key_group = 'normal' AND (last_checked_at IS NULL OR last_checked_at < ?)",
 			twelveHoursAgo
 		)
 		.raw<any>();
@@ -158,14 +157,14 @@ export async function runHealthCheck(sql: DurableObjectStorage['sql']) {
 		const apiKey = row[0] as string;
 		const provider = keyProviderMap.get(apiKey);
 
-		if (!provider) continue; // no provider info or health check disabled → skip
+		if (!provider) continue;
 
 		const ok = await checkKey(apiKey, provider.type, provider.baseUrl, provider.model);
 		if (ok) {
-			await sql.exec('UPDATE api_key_statuses SET last_checked_at = ? WHERE api_key = ?', Date.now(), apiKey);
+			await sql.exec('UPDATE api_keys SET last_checked_at = ? WHERE api_key = ?', Date.now(), apiKey);
 		} else {
 			await sql.exec(
-				"UPDATE api_key_statuses SET key_group = 'abnormal', failed_count = 1, last_checked_at = ? WHERE api_key = ?",
+				"UPDATE api_keys SET key_group = 'abnormal', failed_count = 1, last_checked_at = ? WHERE api_key = ?",
 				Date.now(), apiKey
 			);
 		}
@@ -174,7 +173,7 @@ export async function runHealthCheck(sql: DurableObjectStorage['sql']) {
 
 export async function markKeyAbnormal(sql: DurableObjectStorage['sql'], apiKey: string) {
 	await sql.exec(
-		"UPDATE api_key_statuses SET key_group = 'abnormal', failed_count = failed_count + 1, last_checked_at = ? WHERE api_key = ?",
+		"UPDATE api_keys SET key_group = 'abnormal', failed_count = failed_count + 1, last_checked_at = ? WHERE api_key = ?",
 		Date.now(), apiKey
 	);
 }

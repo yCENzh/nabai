@@ -251,7 +251,7 @@ export async function transformRequest(req: any) {
 
 // ─── GeminiProvider: Canonical IR → Gemini native ───
 
-const GEMINI_REASONS_MAP: Record<string, string> = {
+export const GEMINI_REASONS_MAP: Record<string, string> = {
 	STOP: 'stop',
 	MAX_TOKENS: 'length',
 	SAFETY: 'content_filter',
