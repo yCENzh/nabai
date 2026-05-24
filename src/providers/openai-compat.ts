@@ -100,6 +100,8 @@ export class OpenAICompatProvider implements Provider {
 	}
 }
 
+const STREAM_TIMEOUT_MS = 300_000; // 5 min
+
 async function* openaiStreamToCanonical(response: Response): AsyncIterable<CanonicalStreamEvent> {
 	console.log('[stream] upstream status:', response.status, 'headers:', JSON.stringify(Object.fromEntries(response.headers)));
 	const reader = response.body!.pipeThrough(new TextDecoderStream()).getReader();
@@ -108,7 +110,11 @@ async function* openaiStreamToCanonical(response: Response): AsyncIterable<Canon
 	let finishReason: string | undefined;
 
 	while (true) {
-		const { done, value } = await reader.read();
+		const result = await Promise.race([
+			reader.read(),
+			new Promise<{ done: true; value: undefined }>(r => setTimeout(() => r({ done: true, value: undefined }), STREAM_TIMEOUT_MS)),
+		]);
+		const { done, value } = result;
 		if (done) { console.log('[stream] upstream closed after', chunkCount, 'chunks, buffer:', buffer.length, 'bytes'); break; }
 		chunkCount++;
 		buffer += value;

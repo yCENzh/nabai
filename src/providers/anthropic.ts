@@ -121,13 +121,19 @@ export class AnthropicProvider implements Provider {
 	}
 }
 
+const STREAM_TIMEOUT_MS = 300_000; // 5 min
+
 async function* anthropicStreamToCanonical(response: Response): AsyncIterable<CanonicalStreamEvent> {
 	console.log('[anthropic-stream] upstream status:', response.status);
 	const reader = response.body!.pipeThrough(new TextDecoderStream()).getReader();
 	let buffer = '';
 	let chunkCount = 0;
 	while (true) {
-		const { done, value } = await reader.read();
+		const result = await Promise.race([
+			reader.read(),
+			new Promise<{ done: true; value: undefined }>(r => setTimeout(() => r({ done: true, value: undefined }), STREAM_TIMEOUT_MS)),
+		]);
+		const { done, value } = result;
 		if (done) { console.log('[anthropic-stream] upstream closed after', chunkCount, 'chunks, buffer:', buffer.length, 'bytes'); break; }
 		chunkCount++;
 		buffer += value;
@@ -182,7 +188,8 @@ async function* anthropicStreamToCanonical(response: Response): AsyncIterable<Ca
 					else if (parsed.delta?.type === 'thinking_delta') yield { type: 'reasoning_delta', text: parsed.delta.thinking };
 					else if (parsed.delta?.type === 'input_json_delta') yield { type: 'tool_call_delta', id: '', index: parsed.index, argumentsDelta: parsed.delta.partial_json };
 				} else if (parsed.type === 'message_stop') {
-					}
+					// terminal — handled by done yield below
+				}
 			} catch {}
 		}
 	}
