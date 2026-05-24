@@ -30,7 +30,7 @@ export interface CanonicalRequest {
 export type CanonicalStreamEvent =
 	| { type: 'text_delta'; text: string }
 	| { type: 'reasoning_delta'; text: string }
-	| { type: 'tool_call_delta'; id: string; name?: string; argumentsDelta?: string }
+	| { type: 'tool_call_delta'; id: string; index?: number; name?: string; argumentsDelta?: string }
 	| { type: 'done'; finishReason?: string }
 	| { type: 'error'; code: string; message: string; retryable?: boolean };
 

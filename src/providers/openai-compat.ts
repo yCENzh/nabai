@@ -35,14 +35,54 @@ export class OpenAICompatProvider implements Provider {
 
 	async invoke(req: CanonicalRequest, ctx: ProviderContext): Promise<{ response: Response }> {
 		const url = `${this.baseUrl}/chat/completions`;
+		const messages: any[] = [];
+
+		for (const m of req.messages ?? []) {
+			if (m.role === 'assistant' && Array.isArray(m.content)) {
+				// Extract tool_use blocks → OpenAI tool_calls format
+				const toolCalls: any[] = [];
+				const textParts: string[] = [];
+				for (const block of m.content) {
+					if (block.type === 'input_json' && (block as any).json?.id && (block as any).json?.name) {
+						const j = (block as any).json;
+						toolCalls.push({ id: j.id, type: 'function', function: { name: j.name, arguments: typeof j.arguments === 'string' ? j.arguments : JSON.stringify(j.arguments ?? {}) } });
+					} else if (block.type === 'text') {
+						textParts.push((block as any).text);
+					}
+				}
+				if (toolCalls.length > 0) {
+					messages.push({ role: 'assistant', content: textParts.join('') || null, tool_calls: toolCalls });
+				} else {
+					messages.push({ role: 'assistant', content: m.content });
+				}
+			} else if (m.role === 'user' && Array.isArray(m.content)) {
+				// Extract tool_result blocks → separate role:"tool" messages
+				const toolResults: any[] = [];
+				const otherBlocks: any[] = [];
+				for (const block of m.content) {
+					if (block.type === 'input_json' && (block as any).json?.tool_call_id) {
+						const j = (block as any).json;
+						toolResults.push({ role: 'tool', tool_call_id: j.tool_call_id, content: typeof j.result === 'string' ? j.result : JSON.stringify(j.result ?? '') });
+					} else {
+						otherBlocks.push(block);
+					}
+				}
+				if (otherBlocks.length > 0) messages.push({ role: 'user', content: otherBlocks.length === 1 && otherBlocks[0].type === 'text' ? otherBlocks[0].text : otherBlocks });
+				messages.push(...toolResults);
+			} else {
+				// For assistant messages with only text blocks, join into a string for OpenAI
+				let content = m.content;
+				if (m.role === 'assistant' && Array.isArray(m.content)) {
+					const texts = m.content.filter((b: any) => b.type === 'text').map((b: any) => b.text);
+					if (texts.length > 0) content = texts.join('');
+				}
+				messages.push({ role: m.role, content, ...(m.name ? { name: m.name } : {}), ...(m.tool_call_id ? { tool_call_id: m.tool_call_id } : {}) });
+			}
+		}
+
 		const body: any = {
 			model: req.model,
-			messages: req.messages?.map(m => ({
-				role: m.role,
-				content: m.content,
-				...(m.name ? { name: m.name } : {}),
-				...(m.tool_call_id ? { tool_call_id: m.tool_call_id } : {}),
-			})),
+			messages,
 			stream: req.stream ?? false,
 		};
 		if (req.tools?.length) body.tools = req.tools;
@@ -65,6 +105,7 @@ async function* openaiStreamToCanonical(response: Response): AsyncIterable<Canon
 	const reader = response.body!.pipeThrough(new TextDecoderStream()).getReader();
 	let buffer = '';
 	let chunkCount = 0;
+	let finishReason: string | undefined;
 
 	while (true) {
 		const { done, value } = await reader.read();
@@ -79,7 +120,8 @@ async function* openaiStreamToCanonical(response: Response): AsyncIterable<Canon
 			const data = line.substring(6).trim();
 			if (data === '[DONE]') {
 				console.log('[stream] got [DONE]');
-				yield { type: 'done' };
+				if (finishReason) yield { type: 'done', finishReason };
+				else yield { type: 'done' };
 				return;
 			}
 			if (!data.startsWith('{')) continue;
@@ -89,7 +131,18 @@ async function* openaiStreamToCanonical(response: Response): AsyncIterable<Canon
 				if (!choice) continue;
 				if (choice.delta?.content) yield { type: 'text_delta', text: choice.delta.content };
 				if (choice.delta?.reasoning_content) yield { type: 'reasoning_delta', text: choice.delta.reasoning_content };
-				if (choice.finish_reason) { console.log('[stream] finish_reason:', choice.finish_reason); yield { type: 'done', finishReason: choice.finish_reason }; }
+				if (choice.delta?.tool_calls) {
+					for (const tc of choice.delta.tool_calls) {
+						yield {
+							type: 'tool_call_delta',
+							id: tc.id ?? '',
+							index: tc.index,
+							name: tc.function?.name,
+							argumentsDelta: tc.function?.arguments,
+						};
+					}
+				}
+				if (choice.finish_reason) { console.log('[stream] finish_reason:', choice.finish_reason); finishReason = choice.finish_reason; }
 			} catch {}
 		}
 	}
@@ -100,7 +153,7 @@ async function* openaiStreamToCanonical(response: Response): AsyncIterable<Canon
 		for (const line of lines) {
 			if (!line.startsWith('data: ')) continue;
 			const data = line.substring(6).trim();
-			if (data === '[DONE]') { yield { type: 'done' }; return; }
+			if (data === '[DONE]') { yield { type: 'done', finishReason: finishReason ?? 'stop' }; return; }
 			if (!data.startsWith('{')) continue;
 			try {
 				const parsed = JSON.parse(data);
@@ -108,9 +161,15 @@ async function* openaiStreamToCanonical(response: Response): AsyncIterable<Canon
 				if (choice) {
 					if (choice.delta?.content) yield { type: 'text_delta', text: choice.delta.content };
 					if (choice.delta?.reasoning_content) yield { type: 'reasoning_delta', text: choice.delta.reasoning_content };
-					if (choice.finish_reason) yield { type: 'done', finishReason: choice.finish_reason };
+					if (choice.delta?.tool_calls) {
+						for (const tc of choice.delta.tool_calls) {
+							yield { type: 'tool_call_delta', id: tc.id ?? '', index: tc.index, name: tc.function?.name, argumentsDelta: tc.function?.arguments };
+						}
+					}
+					if (choice.finish_reason) finishReason = choice.finish_reason;
 				}
 			} catch {}
 		}
 	}
+	if (finishReason) yield { type: 'done', finishReason };
 }

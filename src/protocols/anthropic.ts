@@ -106,6 +106,7 @@ export class AnthropicProtocolAdapter implements ProtocolAdapter {
 		let contentIndex = 0;
 		let hasThinking = false;
 		let hasText = false;
+		let hasToolUse = false;
 		let doneSent = false;
 
 		const stream = new ReadableStream({
@@ -162,14 +163,43 @@ export class AnthropicProtocolAdapter implements ProtocolAdapter {
 								index: contentIndex,
 								delta: { type: 'text_delta', text: event.text },
 							});
+						} else if (event.type === 'tool_call_delta') {
+							// Close any open text/thinking block
+							if (hasThinking) {
+								send('content_block_stop', { type: 'content_block_stop', index: contentIndex });
+								contentIndex++;
+								hasThinking = false;
+							} else if (hasText) {
+								send('content_block_stop', { type: 'content_block_stop', index: contentIndex });
+								contentIndex++;
+								hasText = false;
+							}
+							if (event.name) {
+								// New tool call — start a tool_use content block
+								hasToolUse = true;
+								send('content_block_start', {
+									type: 'content_block_start',
+									index: contentIndex,
+									content_block: { type: 'tool_use', id: event.id, name: event.name, input: {} },
+								});
+							}
+							if (event.argumentsDelta) {
+								send('content_block_delta', {
+									type: 'content_block_delta',
+									index: contentIndex,
+									delta: { type: 'input_json_delta', partial_json: event.argumentsDelta },
+								});
+							}
 						} else if (event.type === 'done') {
 							doneSent = true;
 							if (hasThinking) {
 								send('content_block_stop', { type: 'content_block_stop', index: contentIndex });
 								contentIndex++;
 								hasThinking = false;
-							} else if (contentIndex > 0) {
+							} else if (hasText || hasToolUse) {
 								send('content_block_stop', { type: 'content_block_stop', index: contentIndex });
+								hasText = false;
+								hasToolUse = false;
 							}
 
 							send('message_delta', {
@@ -199,7 +229,7 @@ export class AnthropicProtocolAdapter implements ProtocolAdapter {
 					if (hasThinking) {
 						send('content_block_stop', { type: 'content_block_stop', index: contentIndex });
 						contentIndex++;
-					} else if (hasText || contentIndex > 0) {
+					} else if (hasText || hasToolUse) {
 						send('content_block_stop', { type: 'content_block_stop', index: contentIndex });
 					}
 					send('message_delta', {
@@ -246,6 +276,7 @@ function mapFinishReason(reason?: string): string {
 		case 'stop': return 'end_turn';
 		case 'length': return 'max_tokens';
 		case 'content_filter': return 'end_turn';
+		case 'tool_calls': return 'tool_use';
 		default: return reason ?? 'end_turn';
 	}
 }
