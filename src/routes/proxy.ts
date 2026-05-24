@@ -1,16 +1,12 @@
 import { HttpError, fixCors, makeHeaders, generateId, BASE_URL, API_VERSION, maskKey } from '../core/utils';
 import type { CanonicalRequest } from '../core/types';
 import type { Provider } from '../providers/base';
-import { GeminiProvider } from '../providers/gemini';
-import { OpenAICompatProvider } from '../providers/openai-compat';
-import { AnthropicProvider } from '../providers/anthropic';
 import { getRandomApiKey, markKeyAbnormal } from '../pool/key-pool';
 import { OpenAIProtocolAdapter } from '../protocols/openai';
 import { parseStream, parseStreamFlush, toOpenAiStream, toOpenAiStreamFlush } from '../providers/gemini-stream';
-import { getEndpointConfig, getProviderConfig } from '../core/router';
+import { resolveProvider } from '../core/router';
 
 const adapter = new OpenAIProtocolAdapter();
-const geminiProvider = new GeminiProvider();
 
 function extractClientApiKey(request: Request, url: URL): string | null {
 	if (url.searchParams.has('key')) {
@@ -276,23 +272,11 @@ export async function handleOpenAI(
 	}
 
 	// Resolve endpoint → provider config
-	let provider: Provider = geminiProvider;
-	let forwardClientKey = false;
-	const endpoint = await getEndpointConfig(sql, endpointId);
-	if (endpoint) {
-		const provConfig = await getProviderConfig(sql, endpoint.provider_id);
-		if (!provConfig) {
-			return new Response(`Provider "${endpoint.provider_id}" is disabled or not found.`, { status: 503 });
-		}
-		try {
-			const cfg = JSON.parse(provConfig.config_json);
-			forwardClientKey = cfg.forward_client_key === true;
-		} catch {}
-		if (provConfig.type === 'openai_compat') {
-			provider = new OpenAICompatProvider(provConfig.base_url);
-		} else if (provConfig.type === 'anthropic') {
-			provider = new AnthropicProvider(provConfig.base_url);
-		}
+	let provider, forwardClientKey, endpoint;
+	try {
+		({ provider, forwardClientKey, endpoint } = await resolveProvider(sql, endpointId));
+	} catch (err: any) {
+		return new Response(err.message, { status: err.status || 503 });
 	}
 
 	// Auth: forward_client_key → use client's key directly; otherwise → verify AUTH_KEY, use pool key

@@ -1,14 +1,9 @@
 import { HttpError, generateId } from '../core/utils';
-import type { Provider } from '../providers/base';
 import { AnthropicProtocolAdapter } from '../protocols/anthropic';
-import { GeminiProvider } from '../providers/gemini';
-import { OpenAICompatProvider } from '../providers/openai-compat';
-import { AnthropicProvider } from '../providers/anthropic';
 import { getRandomApiKey } from '../pool/key-pool';
-import { getEndpointConfig, getProviderConfig } from '../core/router';
+import { resolveProvider } from '../core/router';
 
 const anthropicAdapter = new AnthropicProtocolAdapter();
-const geminiProvider = new GeminiProvider();
 
 export async function handleAnthropicMessages(
 	request: Request,
@@ -30,26 +25,11 @@ export async function handleAnthropicMessages(
 	}
 
 	// Resolve endpoint → provider config
-	let provider: Provider = geminiProvider;
-	let forwardClientKey = false;
-	const endpoint = await getEndpointConfig(sql, endpointId);
-	if (endpoint) {
-		const provConfig = await getProviderConfig(sql, endpoint.provider_id);
-		if (!provConfig) {
-			return anthropicAdapter.renderError(
-				new HttpError(`Provider "${endpoint.provider_id}" is disabled or not found.`, 503),
-				{ requestId }
-			);
-		}
-		try {
-			const cfg = JSON.parse(provConfig.config_json);
-			forwardClientKey = cfg.forward_client_key === true;
-		} catch {}
-		if (provConfig.type === 'openai_compat') {
-			provider = new OpenAICompatProvider(provConfig.base_url);
-		} else if (provConfig.type === 'anthropic') {
-			provider = new AnthropicProvider(provConfig.base_url);
-		}
+	let provider, forwardClientKey, endpoint;
+	try {
+		({ provider, forwardClientKey, endpoint } = await resolveProvider(sql, endpointId));
+	} catch (err: any) {
+		return anthropicAdapter.renderError(err, { requestId });
 	}
 
 	// Auth: forward_client_key → use client's key directly; otherwise → verify AUTH_KEY, use pool key

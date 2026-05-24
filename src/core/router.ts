@@ -1,3 +1,9 @@
+import { HttpError } from './utils';
+import type { Provider } from '../providers/base';
+import { GeminiProvider } from '../providers/gemini';
+import { OpenAICompatProvider } from '../providers/openai-compat';
+import { AnthropicProvider } from '../providers/anthropic';
+
 /** Extract endpointId from URL path like /e/:endpointId/... Returns null for legacy paths. */
 export function extractEndpointId(pathname: string): string | null {
 	const match = pathname.match(/^\/e\/([^/]+)\//);
@@ -60,4 +66,33 @@ export async function getProviderConfig(
 		enabled: row[4] === 1, config_json: row[5],
 	};
 	return config.enabled ? config : null;
+}
+
+export interface ResolvedProvider {
+	provider: Provider;
+	forwardClientKey: boolean;
+	endpoint: EndpointConfig | null;
+}
+
+/** Resolve endpoint → provider config → Provider instance. Throws HttpError on failure. */
+export async function resolveProvider(sql: DurableObjectStorage['sql'], endpointId: string): Promise<ResolvedProvider> {
+	let provider: Provider = new GeminiProvider();
+	let forwardClientKey = false;
+	const endpoint = await getEndpointConfig(sql, endpointId);
+	if (endpoint) {
+		const provConfig = await getProviderConfig(sql, endpoint.provider_id);
+		if (!provConfig) {
+			throw new HttpError(`Provider "${endpoint.provider_id}" is disabled or not found.`, 503);
+		}
+		try {
+			const cfg = JSON.parse(provConfig.config_json);
+			forwardClientKey = cfg.forward_client_key === true;
+		} catch {}
+		if (provConfig.type === 'openai_compat') {
+			provider = new OpenAICompatProvider(provConfig.base_url);
+		} else if (provConfig.type === 'anthropic') {
+			provider = new AnthropicProvider(provConfig.base_url);
+		}
+	}
+	return { provider, forwardClientKey, endpoint };
 }

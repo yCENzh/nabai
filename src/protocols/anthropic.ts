@@ -106,6 +106,7 @@ export class AnthropicProtocolAdapter implements ProtocolAdapter {
 		const encoder = new TextEncoder();
 		let contentIndex = 0;
 		let hasThinking = false;
+		let hasText = false;
 
 		const stream = new ReadableStream({
 			async start(controller) {
@@ -148,7 +149,8 @@ export class AnthropicProtocolAdapter implements ProtocolAdapter {
 								contentIndex++;
 								hasThinking = false;
 							}
-							if (contentIndex === 0 || !hasThinking) {
+							if (!hasText) {
+								hasText = true;
 								send('content_block_start', {
 									type: 'content_block_start',
 									index: contentIndex,
