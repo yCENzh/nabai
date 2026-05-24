@@ -155,4 +155,24 @@ async function* anthropicStreamToCanonical(response: Response): AsyncIterable<Ca
 			}
 		}
 	}
+
+	// Process remaining buffer after upstream closed
+	if (buffer) {
+		const lines = (buffer + '\n').split('\n');
+		for (const line of lines) {
+			if (!line.startsWith('data: ')) continue;
+			const data = line.substring(6).trim();
+			if (!data.startsWith('{')) continue;
+			try {
+				const parsed = JSON.parse(data);
+				if (parsed.type === 'content_block_delta') {
+					if (parsed.delta?.type === 'text_delta') yield { type: 'text_delta', text: parsed.delta.text };
+					else if (parsed.delta?.type === 'thinking_delta') yield { type: 'reasoning_delta', text: parsed.delta.thinking };
+				} else if (parsed.type === 'message_stop') {
+					yield { type: 'done' };
+					return;
+				}
+			} catch {}
+		}
+	}
 }

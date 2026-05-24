@@ -47,15 +47,16 @@ export class OpenAIProtocolAdapter implements ProtocolAdapter {
 		const encoder = new TextEncoder();
 		const stream = new ReadableStream({
 			async start(controller) {
+				let doneSent = false;
 				try {
 					for await (const event of events) {
 						if (event.type === 'text_delta' || event.type === 'reasoning_delta') {
-							// Already formatted as SSE by the generator
 							controller.enqueue(encoder.encode(event.type === 'reasoning_delta'
 								? `data: ${JSON.stringify({ id: opts.requestId, object: 'chat.completion.chunk', created: Math.floor(Date.now() / 1000), model: '', choices: [{ index: 0, delta: { reasoning_content: event.text }, finish_reason: null }] })}\n\n`
 								: `data: ${JSON.stringify({ id: opts.requestId, object: 'chat.completion.chunk', created: Math.floor(Date.now() / 1000), model: '', choices: [{ index: 0, delta: { content: event.text }, finish_reason: null }] })}\n\n`
 							));
 						} else if (event.type === 'done') {
+							doneSent = true;
 							controller.enqueue(encoder.encode('data: [DONE]\n\n'));
 						} else if (event.type === 'error') {
 							controller.enqueue(encoder.encode(`data: ${JSON.stringify({ error: { message: event.message, type: 'server_error', code: event.code } })}\n\n`));
@@ -63,6 +64,9 @@ export class OpenAIProtocolAdapter implements ProtocolAdapter {
 					}
 				} catch (err) {
 					controller.enqueue(encoder.encode(`data: ${JSON.stringify({ error: { message: String(err), type: 'server_error' } })}\n\n`));
+				}
+				if (!doneSent) {
+					controller.enqueue(encoder.encode('data: [DONE]\n\n'));
 				}
 				controller.close();
 			},

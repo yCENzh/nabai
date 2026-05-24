@@ -89,4 +89,24 @@ async function* openaiStreamToCanonical(response: Response): AsyncIterable<Canon
 			} catch {}
 		}
 	}
+
+	// Process remaining buffer after upstream closed
+	if (buffer) {
+		const lines = (buffer + '\n').split('\n');
+		for (const line of lines) {
+			if (!line.startsWith('data: ')) continue;
+			const data = line.substring(6).trim();
+			if (data === '[DONE]') { yield { type: 'done' }; return; }
+			if (!data.startsWith('{')) continue;
+			try {
+				const parsed = JSON.parse(data);
+				const choice = parsed.choices?.[0];
+				if (choice) {
+					if (choice.delta?.content) yield { type: 'text_delta', text: choice.delta.content };
+					if (choice.delta?.reasoning_content) yield { type: 'reasoning_delta', text: choice.delta.reasoning_content };
+					if (choice.finish_reason) yield { type: 'done', finishReason: choice.finish_reason };
+				}
+			} catch {}
+		}
+	}
 }

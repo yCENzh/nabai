@@ -106,6 +106,7 @@ export class AnthropicProtocolAdapter implements ProtocolAdapter {
 		let contentIndex = 0;
 		let hasThinking = false;
 		let hasText = false;
+		let doneSent = false;
 
 		const stream = new ReadableStream({
 			async start(controller) {
@@ -162,6 +163,7 @@ export class AnthropicProtocolAdapter implements ProtocolAdapter {
 								delta: { type: 'text_delta', text: event.text },
 							});
 						} else if (event.type === 'done') {
+							doneSent = true;
 							if (hasThinking) {
 								send('content_block_stop', { type: 'content_block_stop', index: contentIndex });
 								contentIndex++;
@@ -190,6 +192,21 @@ export class AnthropicProtocolAdapter implements ProtocolAdapter {
 						type: 'error',
 						error: { type: 'api_error', message: String(err) },
 					});
+				}
+
+				// Upstream closed without sending done — emit terminal events so client doesn't hang
+				if (!doneSent) {
+					if (hasThinking) {
+						send('content_block_stop', { type: 'content_block_stop', index: contentIndex });
+						contentIndex++;
+					} else if (hasText || contentIndex > 0) {
+						send('content_block_stop', { type: 'content_block_stop', index: contentIndex });
+					}
+					send('message_delta', {
+						type: 'message_delta',
+						delta: { stop_reason: 'end_turn', stop_sequence: null },
+					});
+					send('message_stop', { type: 'message_stop' });
 				}
 
 				controller.close();
