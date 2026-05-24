@@ -120,9 +120,7 @@ async function* openaiStreamToCanonical(response: Response): AsyncIterable<Canon
 			const data = line.substring(6).trim();
 			if (data === '[DONE]') {
 				console.log('[stream] got [DONE]');
-				if (finishReason) yield { type: 'done', finishReason };
-				else yield { type: 'done' };
-				return;
+				continue;
 			}
 			if (!data.startsWith('{')) continue;
 			try {
@@ -153,7 +151,7 @@ async function* openaiStreamToCanonical(response: Response): AsyncIterable<Canon
 		for (const line of lines) {
 			if (!line.startsWith('data: ')) continue;
 			const data = line.substring(6).trim();
-			if (data === '[DONE]') { yield { type: 'done', finishReason: finishReason ?? 'stop' }; return; }
+			if (data === '[DONE]') continue;
 			if (!data.startsWith('{')) continue;
 			try {
 				const parsed = JSON.parse(data);
@@ -171,5 +169,5 @@ async function* openaiStreamToCanonical(response: Response): AsyncIterable<Canon
 			} catch {}
 		}
 	}
-	if (finishReason) yield { type: 'done', finishReason };
+	yield { type: 'done', finishReason: finishReason ?? 'stop' };
 }
