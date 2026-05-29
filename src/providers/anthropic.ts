@@ -21,10 +21,30 @@ export class AnthropicProvider implements Provider {
 	parseResponse(data: any, req: CanonicalRequest): CanonicalResponse {
 		let textContent: string | null = null;
 		let reasoningContent: string | undefined;
+		const toolCalls: any[] = [];
 
 		for (const block of data.content ?? []) {
 			if (block.type === 'text') textContent = block.text;
 			if (block.type === 'thinking') reasoningContent = block.thinking;
+			if (block.type === 'tool_use') {
+				toolCalls.push({
+					id: block.id,
+					type: 'function',
+					function: {
+						name: block.name,
+						arguments: typeof block.input === 'string' ? block.input : JSON.stringify(block.input ?? {}),
+					},
+				});
+			}
+		}
+
+		const message: any = {
+			role: 'assistant',
+			content: textContent,
+			...(reasoningContent ? { reasoning_content: reasoningContent } : {}),
+		};
+		if (toolCalls.length > 0) {
+			message.tool_calls = toolCalls;
 		}
 
 		return {
@@ -32,11 +52,7 @@ export class AnthropicProvider implements Provider {
 			model: data.model ?? req.model,
 			choices: [{
 				index: 0,
-				message: {
-					role: 'assistant',
-					content: textContent,
-					...(reasoningContent ? { reasoning_content: reasoningContent } : {}),
-				},
+				message,
 				finish_reason: STOP_REASON_MAP[data.stop_reason] ?? data.stop_reason ?? 'stop',
 			}],
 		};
@@ -128,6 +144,8 @@ async function* anthropicStreamToCanonical(response: Response): AsyncIterable<Ca
 	const reader = response.body!.pipeThrough(new TextDecoderStream()).getReader();
 	let buffer = '';
 	let chunkCount = 0;
+	let stopReason: string | undefined;
+
 	while (true) {
 		const result = await Promise.race([
 			reader.read(),
@@ -160,6 +178,11 @@ async function* anthropicStreamToCanonical(response: Response): AsyncIterable<Ca
 				} else if (parsed.delta?.type === 'input_json_delta') {
 					yield { type: 'tool_call_delta', id: '', index: parsed.index, argumentsDelta: parsed.delta.partial_json };
 				}
+			} else if (parsed.type === 'message_delta') {
+				if (parsed.delta?.stop_reason) {
+					stopReason = parsed.delta.stop_reason;
+					console.log('[anthropic-stream] stop_reason:', stopReason);
+				}
 			} else if (parsed.type === 'message_stop') {
 				console.log('[anthropic-stream] got message_stop');
 			} else if (parsed.type === 'error') {
@@ -187,11 +210,13 @@ async function* anthropicStreamToCanonical(response: Response): AsyncIterable<Ca
 					if (parsed.delta?.type === 'text_delta') yield { type: 'text_delta', text: parsed.delta.text };
 					else if (parsed.delta?.type === 'thinking_delta') yield { type: 'reasoning_delta', text: parsed.delta.thinking };
 					else if (parsed.delta?.type === 'input_json_delta') yield { type: 'tool_call_delta', id: '', index: parsed.index, argumentsDelta: parsed.delta.partial_json };
+				} else if (parsed.type === 'message_delta') {
+					if (parsed.delta?.stop_reason) stopReason = parsed.delta.stop_reason;
 				} else if (parsed.type === 'message_stop') {
 					// terminal — handled by done yield below
 				}
 			} catch {}
 		}
 	}
-	yield { type: 'done' };
+	yield { type: 'done', finishReason: stopReason };
 }

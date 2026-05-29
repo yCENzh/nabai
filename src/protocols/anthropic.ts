@@ -79,11 +79,21 @@ export class AnthropicProtocolAdapter implements ProtocolAdapter {
 	renderJson(response: CanonicalResponse, opts: { requestId: string }): Response {
 		const content: any[] = [];
 		for (const choice of response.choices) {
+			if (choice.message.reasoning_content) {
+				content.push({ type: 'thinking', thinking: choice.message.reasoning_content });
+			}
 			if (choice.message.content) {
 				content.push({ type: 'text', text: choice.message.content });
 			}
-			if (choice.message.reasoning_content) {
-				content.push({ type: 'thinking', thinking: choice.message.reasoning_content });
+			if (choice.message.tool_calls) {
+				for (const tc of choice.message.tool_calls) {
+					content.push({
+						type: 'tool_use',
+						id: tc.id,
+						name: tc.function.name,
+						input: JSON.parse(tc.function.arguments || '{}'),
+					});
+				}
 			}
 		}
 

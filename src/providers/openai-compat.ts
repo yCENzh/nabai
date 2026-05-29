@@ -23,6 +23,7 @@ export class OpenAICompatProvider implements Provider {
 					role: 'assistant',
 					content: c.message?.content ?? null,
 					...(c.message?.reasoning_content ? { reasoning_content: c.message.reasoning_content } : {}),
+					...(c.message?.tool_calls?.length ? { tool_calls: c.message.tool_calls } : {}),
 				},
 				finish_reason: c.finish_reason ?? 'stop',
 			})),

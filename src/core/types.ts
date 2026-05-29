@@ -39,7 +39,7 @@ export interface CanonicalResponse {
 	model: string;
 	choices: Array<{
 		index: number;
-		message: { role: string; content: string | null; reasoning_content?: string };
+		message: { role: string; content: string | null; reasoning_content?: string; tool_calls?: Array<{ id: string; type: string; function: { name: string; arguments: string } }> };
 		finish_reason: string;
 	}>;
 }
