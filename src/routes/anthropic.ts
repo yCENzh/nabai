@@ -77,10 +77,12 @@ export async function handleAnthropicMessages(
 		}
 
 		// Streaming
+		console.log('[anthropic-handler] invoking upstream, provider:', provider.type);
 		const { response: upstreamResp } = await provider.invoke(canonical, { apiKey });
+		console.log('[anthropic-handler] upstream status:', upstreamResp.status);
 		if (!upstreamResp.ok) {
 			const errText = await upstreamResp.text();
-			console.error('Upstream error:', errText);
+			console.error('[anthropic-handler] Upstream error:', errText);
 			return anthropicAdapter.renderError(
 				new HttpError(`Upstream error: ${upstreamResp.status}`, upstreamResp.status),
 				{ requestId }
@@ -88,9 +90,10 @@ export async function handleAnthropicMessages(
 		}
 
 		const events = provider.parseStream(upstreamResp, canonical);
+		console.log('[anthropic-handler] stream created, rendering...');
 		return anthropicAdapter.renderStream(events, { requestId });
 	} catch (err) {
-		console.error('Anthropic handler error:', err);
+		console.error('[anthropic-handler] error:', err);
 		return anthropicAdapter.renderError(err, { requestId });
 	}
 }

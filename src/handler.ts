@@ -33,6 +33,7 @@ export class LoadBalancer extends DurableObject {
 	}
 
 	async fetch(request: Request): Promise<Response> {
+		const doStart = Date.now();
 		if (request.method === 'OPTIONS') {
 			return new Response(null, {
 				status: 204,
@@ -41,6 +42,7 @@ export class LoadBalancer extends DurableObject {
 		}
 		const url = new URL(request.url);
 		let pathname = url.pathname;
+		console.log('[do-fetch]', request.method, pathname);
 
 		if (pathname === '/favicon.ico' || pathname === '/robots.txt') {
 			return new Response('', { status: 204 });
