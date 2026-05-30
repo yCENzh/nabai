@@ -10,7 +10,7 @@ export interface ProtocolAdapter {
 	renderJson(response: CanonicalResponse, opts: { requestId: string }): Response;
 
 	/** Render streaming response from async iterable of events */
-	renderStream(events: AsyncIterable<CanonicalStreamEvent>, opts: { requestId: string }): Response;
+	renderStream(events: AsyncIterable<CanonicalStreamEvent>, opts: { requestId: string; model?: string }): Response;
 
 	/** Render error in protocol-native format */
 	renderError(err: unknown, opts: { requestId: string }): Response;

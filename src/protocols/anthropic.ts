@@ -120,7 +120,7 @@ export class AnthropicProtocolAdapter implements ProtocolAdapter {
 		});
 	}
 
-	renderStream(events: AsyncIterable<CanonicalStreamEvent>, opts: { requestId: string }): Response {
+	renderStream(events: AsyncIterable<CanonicalStreamEvent>, opts: { requestId: string; model?: string }): Response {
 		const encoder = new TextEncoder();
 		let contentIndex = 0;
 		let hasThinking = false;
@@ -142,8 +142,9 @@ export class AnthropicProtocolAdapter implements ProtocolAdapter {
 						type: 'message',
 						role: 'assistant',
 						content: [],
-						model: '',
+						model: opts.model ?? '',
 						stop_reason: null,
+						usage: { input_tokens: 0, output_tokens: 0 },
 					},
 				});
 

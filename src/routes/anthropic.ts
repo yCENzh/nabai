@@ -91,7 +91,7 @@ export async function handleAnthropicMessages(
 
 		const events = provider.parseStream(upstreamResp, canonical);
 		console.log('[anthropic-handler] stream created, rendering...');
-		return anthropicAdapter.renderStream(events, { requestId });
+		return anthropicAdapter.renderStream(events, { requestId, model: canonical.model });
 	} catch (err) {
 		console.error('[anthropic-handler] error:', err);
 		return anthropicAdapter.renderError(err, { requestId });
