@@ -59,11 +59,21 @@ export class AnthropicProtocolAdapter implements ProtocolAdapter {
 			},
 		}));
 
+		// Convert Anthropic tool_choice to canonical (OpenAI) format
+		let tool_choice: CanonicalRequest['tool_choice'];
+		if (body.tool_choice) {
+			if (body.tool_choice.type === 'auto') tool_choice = 'auto';
+			else if (body.tool_choice.type === 'none') tool_choice = 'none';
+			else if (body.tool_choice.type === 'any') tool_choice = 'auto';
+			else if (body.tool_choice.type === 'tool') tool_choice = { type: 'function', name: body.tool_choice.name };
+		}
+
 		return {
 			requestId: opts.requestId,
 			model: body.model,
 			messages,
 			tools,
+			tool_choice,
 			max_tokens: body.max_tokens,
 			temperature: body.temperature,
 			top_p: body.top_p,
@@ -71,7 +81,6 @@ export class AnthropicProtocolAdapter implements ProtocolAdapter {
 			metadata: {
 				anthropic_version: body.anthropic_version,
 				thinking: body.thinking,
-				tool_choice: body.tool_choice,
 			},
 		};
 	}
@@ -187,6 +196,7 @@ export class AnthropicProtocolAdapter implements ProtocolAdapter {
 							if (event.name) {
 								// New tool call — start a tool_use content block
 								hasToolUse = true;
+								console.log('[anthropic-render] tool_use start:', event.name, 'id:', event.id);
 								send('content_block_start', {
 									type: 'content_block_start',
 									index: contentIndex,
@@ -202,6 +212,7 @@ export class AnthropicProtocolAdapter implements ProtocolAdapter {
 							}
 						} else if (event.type === 'done') {
 							doneSent = true;
+							console.log('[anthropic-render] done, finishReason:', event.finishReason, '→ stop_reason:', mapFinishReason(event.finishReason));
 							if (hasThinking) {
 								send('content_block_stop', { type: 'content_block_stop', index: contentIndex });
 								contentIndex++;

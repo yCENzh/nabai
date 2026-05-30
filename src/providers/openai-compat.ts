@@ -137,6 +137,7 @@ async function* openaiStreamToCanonical(response: Response): AsyncIterable<Canon
 				if (choice.delta?.content) yield { type: 'text_delta', text: choice.delta.content };
 				if (choice.delta?.reasoning_content) yield { type: 'reasoning_delta', text: choice.delta.reasoning_content };
 				if (choice.delta?.tool_calls) {
+					console.log('[stream] tool_calls detected:', JSON.stringify(choice.delta.tool_calls));
 					for (const tc of choice.delta.tool_calls) {
 						yield {
 							type: 'tool_call_delta',

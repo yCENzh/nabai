@@ -53,6 +53,7 @@ export async function handleAnthropicMessages(
 	try {
 		const canonical = await anthropicAdapter.parseRequest(request, { requestId });
 		const isStream = canonical.stream ?? false;
+		console.log('[anthropic-handler] tools:', canonical.tools?.length ?? 0, 'tool_choice:', canonical.tool_choice ?? 'none', 'stream:', isStream);
 
 		if (!isStream) {
 			const { response: upstreamResp } = await provider.invoke(canonical, { apiKey });
