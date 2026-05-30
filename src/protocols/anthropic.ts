@@ -230,6 +230,7 @@ export class AnthropicProtocolAdapter implements ProtocolAdapter {
 									stop_reason: mapFinishReason(event.finishReason),
 									stop_sequence: null,
 								},
+								usage: { output_tokens: 0 },
 							});
 							send('message_stop', { type: 'message_stop' });
 						} else if (event.type === 'error') {
@@ -257,6 +258,7 @@ export class AnthropicProtocolAdapter implements ProtocolAdapter {
 					send('message_delta', {
 						type: 'message_delta',
 						delta: { stop_reason: 'end_turn', stop_sequence: null },
+						usage: { output_tokens: 0 },
 					});
 					send('message_stop', { type: 'message_stop' });
 				}
