@@ -27,8 +27,9 @@ export const makeHeaders = (apiKey: string, more?: Record<string, string>) => ({
 
 export function generateId(): string {
 	const characters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
-	const randomChar = () => characters[Math.floor(Math.random() * characters.length)];
-	return Array.from({ length: 29 }, randomChar).join('');
+	const bytes = new Uint8Array(29);
+	crypto.getRandomValues(bytes);
+	return Array.from(bytes, (b) => characters[b % characters.length]).join('');
 }
 
 export function maskKey(key: string): string {

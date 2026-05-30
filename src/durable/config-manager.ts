@@ -21,7 +21,6 @@ export class ConfigManager {
 				api_key TEXT NOT NULL UNIQUE,
 				enabled INTEGER NOT NULL DEFAULT 1,
 				health_check_enabled INTEGER NOT NULL DEFAULT 1,
-				status TEXT NOT NULL DEFAULT 'normal',
 				key_group TEXT NOT NULL DEFAULT 'normal',
 				last_checked_at INTEGER,
 				failed_count INTEGER NOT NULL DEFAULT 0,

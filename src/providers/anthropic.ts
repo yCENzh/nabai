@@ -72,7 +72,16 @@ export class AnthropicProvider implements Provider {
 				continue;
 			}
 
-			const role = msg.role === 'assistant' ? 'assistant' : 'user';
+			// Tool result message: role=tool, content is the result text
+			if (msg.role === 'tool' && msg.tool_call_id) {
+				const resultContent = typeof msg.content === 'string' ? msg.content : '';
+				messages.push({
+					role: 'user',
+					content: [{ type: 'tool_result', tool_use_id: msg.tool_call_id, content: resultContent }],
+				});
+				continue;
+			}
+
 			let content: any;
 
 			if (typeof msg.content === 'string') {
@@ -97,13 +106,28 @@ export class AnthropicProvider implements Provider {
 							return { type: 'tool_result', tool_use_id: json.tool_call_id, content: json.result };
 						}
 					}
+					if (block.type === 'tool_result') return block;
+					if (block.type === 'tool_use') return block;
 					return block;
 				});
 			} else {
 				content = '';
 			}
 
-			messages.push({ role, content });
+			// Assistant message with tool_calls: convert to tool_use content blocks
+			if (msg.role === 'assistant' && msg.tool_calls?.length) {
+				const toolUseBlocks = msg.tool_calls.map((tc: any) => ({
+					type: 'tool_use',
+					id: tc.id,
+					name: tc.function.name,
+					input: typeof tc.function.arguments === 'string'
+						? JSON.parse(tc.function.arguments)
+						: tc.function.arguments ?? {},
+				}));
+				content = Array.isArray(content) ? [...content, ...toolUseBlocks] : toolUseBlocks;
+			}
+
+			messages.push({ role: msg.role === 'assistant' ? 'assistant' : 'user', content });
 		}
 
 		const body: any = { model: req.model, max_tokens: req.max_tokens ?? 4096, messages };

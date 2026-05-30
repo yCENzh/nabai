@@ -3,6 +3,7 @@ export interface CanonicalMessage {
 	content: string | Array<{ type: string; [k: string]: unknown }>;
 	name?: string;
 	tool_call_id?: string;
+	tool_calls?: Array<{ id: string; type: string; function: { name: string; arguments: string } }>;
 }
 
 export interface CanonicalTool {

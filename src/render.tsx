@@ -485,7 +485,7 @@ document.addEventListener('DOMContentLoaded', () => {
 						'<td class="mono"><span class="key-display" data-full="' + safeKey + '" data-masked="' + maskedKey + '">' + maskedKey + '</span><button class="eye-btn" title="显示/隐藏">👁</button></td>' +
 						'<td class="text-muted">' + E(k.provider_id) + '</td>' +
 						'<td class="text-muted">' + E(k.model || '-') + '</td>' +
-						'<td>' + (k.status === 'normal' ? '<span class="status-ok">正常</span>' : '<span class="status-err">' + E(k.status) + '</span>') + '</td>' +
+						'<td>' + (k.key_group === 'normal' ? '<span class="status-ok">正常</span>' : '<span class="status-err">' + E(k.key_group) + '</span>') + '</td>' +
 						'<td>' + (k.enabled ? '<span class="status-ok">是</span>' : '<span class="status-err">否</span>') + '</td>' +
 						'<td class="text-muted">' + (k.health_check_enabled ? '是' : '否') + '</td>' +
 						'<td class="text-muted hide-mobile">' + (k.last_checked_at ? new Date(k.last_checked_at).toLocaleString() : '-') + '</td>' +

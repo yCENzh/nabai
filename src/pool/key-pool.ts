@@ -53,7 +53,7 @@ function buildHealthCheckRequest(providerType: string, baseUrl: string, model?: 
 				url: `${cleanUrl}/v1/messages`,
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json', 'anthropic-version': '2023-06-01' },
-				body: JSON.stringify({ model: model || 'claude-haiku-4-5-20251001', max_tokens: 1, messages: [{ role: 'user', content: 'hi' }] }),
+				body: JSON.stringify({ model, max_tokens: 1, messages: [{ role: 'user', content: 'hi' }] }),
 			};
 		default:
 			return {

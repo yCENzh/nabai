@@ -170,7 +170,7 @@ export async function handleApiKeysCheck(request: Request, sql: DurableObjectSto
 						response = await fetch(`${baseUrl.replace(/\/+$/, '')}/v1/messages`, {
 							method: 'POST',
 							headers: { 'Content-Type': 'application/json', 'x-api-key': key, 'anthropic-version': '2023-06-01' },
-							body: JSON.stringify({ model: model || 'claude-haiku-4-5-20251001', max_tokens: 1, messages: [{ role: 'user', content: 'hi' }] }),
+							body: JSON.stringify({ model, max_tokens: 1, messages: [{ role: 'user', content: 'hi' }] }),
 						});
 					} else {
 						response = await fetch(`${baseUrl.replace(/\/+$/, '')}/models`, {
@@ -188,12 +188,12 @@ export async function handleApiKeysCheck(request: Request, sql: DurableObjectSto
 		for (const result of checkResults) {
 			if (result.valid) {
 				sql.exec(
-					"UPDATE api_keys SET status = 'normal', key_group = 'normal', failed_count = 0, last_checked_at = ? WHERE api_key = ?",
+					"UPDATE api_keys SET key_group = 'normal', failed_count = 0, last_checked_at = ? WHERE api_key = ?",
 					Date.now(), result.key
 				);
 			} else {
 				sql.exec(
-					"UPDATE api_keys SET status = 'abnormal', key_group = 'abnormal', failed_count = failed_count + 1, last_checked_at = ? WHERE api_key = ?",
+					"UPDATE api_keys SET key_group = 'abnormal', failed_count = failed_count + 1, last_checked_at = ? WHERE api_key = ?",
 					Date.now(), result.key
 				);
 			}
@@ -218,15 +218,15 @@ export async function getAllApiKeys(request: Request, sql: DurableObjectStorage[
 		const total = totalArray.length > 0 ? totalArray[0][0] : 0;
 
 		const results = sql
-			.exec(`SELECT api_key, status, key_group, last_checked_at, failed_count, provider_id, model, health_check_enabled, enabled
+			.exec(`SELECT api_key, key_group, last_checked_at, failed_count, provider_id, model, health_check_enabled, enabled
 				   FROM api_keys
 				   LIMIT ? OFFSET ?`, pageSize, offset)
 			.raw<any>();
 		const keys = results
 			? Array.from(results).map((row: any) => ({
-					api_key: row[0], status: row[1], key_group: row[2],
-					last_checked_at: row[3], failed_count: row[4], provider_id: row[5],
-					model: row[6] || '', health_check_enabled: row[7] === 1, enabled: row[8] === 1,
+					api_key: row[0], key_group: row[1],
+					last_checked_at: row[2], failed_count: row[3], provider_id: row[4],
+					model: row[5] || '', health_check_enabled: row[6] === 1, enabled: row[7] === 1,
 			  }))
 			: [];
 

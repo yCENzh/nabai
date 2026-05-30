@@ -19,11 +19,24 @@ export function parseStream(this: any, chunk: string, controller: any) {
 /** SSE parser flush: handle remaining buffer */
 export function parseStreamFlush(this: any, controller: any) {
 	if (this.buffer) {
-		try {
-			controller.enqueue(JSON.parse(this.buffer));
-			this.shared.is_buffers_rest = true;
-		} catch (e) {
-			console.error('Error parsing remaining buffer:', e);
+		const trimmed = this.buffer.trim();
+		if (trimmed.startsWith('data: ')) {
+			const data = trimmed.substring(6);
+			if (data.startsWith('{')) {
+				try {
+					controller.enqueue(JSON.parse(data));
+					this.shared.is_buffers_rest = true;
+				} catch (e) {
+					console.error('Error parsing remaining buffer:', e);
+				}
+			}
+		} else if (trimmed.startsWith('{')) {
+			try {
+				controller.enqueue(JSON.parse(trimmed));
+				this.shared.is_buffers_rest = true;
+			} catch (e) {
+				console.error('Error parsing remaining buffer:', e);
+			}
 		}
 	}
 }
@@ -45,18 +58,7 @@ export function toOpenAiStream(this: any, line: any, controller: any) {
 				}
 
 				const lastReasoningText = this.reasoningLast[index] || '';
-				let reasoningDelta = '';
-
-				if (reasoningText.startsWith(lastReasoningText)) {
-					reasoningDelta = reasoningText.substring(lastReasoningText.length);
-				} else {
-					let i = 0;
-					while (i < reasoningText.length && i < lastReasoningText.length && reasoningText[i] === lastReasoningText[i]) {
-						i++;
-					}
-					reasoningDelta = reasoningText.substring(i);
-				}
-
+				const reasoningDelta = reasoningText.length > lastReasoningText.length ? reasoningText.substring(lastReasoningText.length) : reasoningText;
 				this.reasoningLast[index] = reasoningText;
 
 				if (reasoningDelta) {
@@ -83,18 +85,7 @@ export function toOpenAiStream(this: any, line: any, controller: any) {
 				}
 
 				const lastText = this.last[index] || '';
-				let delta = '';
-
-				if (finalText.startsWith(lastText)) {
-					delta = finalText.substring(lastText.length);
-				} else {
-					let i = 0;
-					while (i < finalText.length && i < lastText.length && finalText[i] === lastText[i]) {
-						i++;
-					}
-					delta = finalText.substring(i);
-				}
-
+				const delta = finalText.length > lastText.length ? finalText.substring(lastText.length) : finalText;
 				this.last[index] = finalText;
 
 				if (delta) {

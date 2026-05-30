@@ -373,28 +373,14 @@ async function* streamToCanonical(response: Response, req: CanonicalRequest): As
 
 					if (reasoningContent) {
 						const last = lastReasoning[index] || '';
-						let delta = '';
-						if (reasoningContent.startsWith(last)) {
-							delta = reasoningContent.substring(last.length);
-						} else {
-							let i = 0;
-							while (i < reasoningContent.length && i < last.length && reasoningContent[i] === last[i]) i++;
-							delta = reasoningContent.substring(i);
-						}
+						const delta = reasoningContent.length > last.length ? reasoningContent.substring(last.length) : reasoningContent;
 						lastReasoning[index] = reasoningContent;
 						if (delta) yield { type: 'reasoning_delta', text: delta };
 					}
 
 					if (finalContent) {
 						const last = lastTexts[index] || '';
-						let delta = '';
-						if (finalContent.startsWith(last)) {
-							delta = finalContent.substring(last.length);
-						} else {
-							let i = 0;
-							while (i < finalContent.length && i < last.length && finalContent[i] === last[i]) i++;
-							delta = finalContent.substring(i);
-						}
+						const delta = finalContent.length > last.length ? finalContent.substring(last.length) : finalContent;
 						lastTexts[index] = finalContent;
 						if (delta) yield { type: 'text_delta', text: delta };
 					}
@@ -415,10 +401,19 @@ async function* streamToCanonical(response: Response, req: CanonicalRequest): As
 				const parsed = JSON.parse(data);
 				if (parsed.candidates) {
 					for (const cand of parsed.candidates) {
-						const { content, finishReason } = cand;
+						const { index, content, finishReason } = cand;
 						const parts = content?.parts ?? [];
-						const { finalContent } = parseThinkingParts(parts);
-						if (finalContent) yield { type: 'text_delta', text: finalContent };
+						const { reasoningContent, finalContent } = parseThinkingParts(parts);
+						if (reasoningContent) {
+							const last = lastReasoning[index] || '';
+							const delta = reasoningContent.length > last.length ? reasoningContent.substring(last.length) : reasoningContent;
+							if (delta) yield { type: 'reasoning_delta', text: delta };
+						}
+						if (finalContent) {
+							const last = lastTexts[index] || '';
+							const delta = finalContent.length > last.length ? finalContent.substring(last.length) : finalContent;
+							if (delta) yield { type: 'text_delta', text: delta };
+						}
 						if (finishReason) yield { type: 'done', finishReason: GEMINI_REASONS_MAP[finishReason] || finishReason };
 					}
 				}
