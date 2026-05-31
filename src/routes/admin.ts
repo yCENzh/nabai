@@ -62,12 +62,20 @@ export async function handleApiKeys(request: Request, sql: DurableObjectStorage[
 		}
 		const hce = health_check_enabled !== false ? 1 : 0;
 		const mdl = model || '';
+		let added = 0;
+		let skipped = 0;
 		for (const key of keys) {
+			const existing = Array.from(sql.exec('SELECT 1 FROM api_keys WHERE api_key = ?', key).raw<any>());
+			if (existing.length > 0) { skipped++; continue; }
 			const keyId = crypto.randomUUID();
-			sql.exec('INSERT OR IGNORE INTO api_keys (id, provider_id, model, api_key, health_check_enabled) VALUES (?, ?, ?, ?, ?)', keyId, provider_id, mdl, key, hce);
+			sql.exec('INSERT INTO api_keys (id, provider_id, model, api_key, health_check_enabled) VALUES (?, ?, ?, ?, ?)', keyId, provider_id, mdl, key, hce);
+			added++;
 		}
 
-		return jsonResponse({ message: 'API密钥添加成功。' });
+		if (added === 0) {
+			return jsonResponse({ error: '密钥已存在，未添加任何新密钥。' }, 409);
+		}
+		return jsonResponse({ message: `成功添加 ${added} 个密钥` + (skipped ? `，${skipped} 个已存在跳过` : '') + '。' });
 	} catch (error: any) {
 		console.error('处理API密钥失败:', error);
 		return jsonResponse({ error: error.message || '内部服务器错误' }, 500);
@@ -156,29 +164,32 @@ export async function handleApiKeysCheck(request: Request, sql: DurableObjectSto
 				try {
 					const provider = providerMap.get(key);
 					const providerType = provider?.type || 'gemini';
-					const baseUrl = provider?.baseUrl || BASE_URL;
-					const model = provider?.model || 'gemini-2.5-flash';
+					const baseUrl = (provider?.baseUrl || BASE_URL).replace(/\/+$/, '');
+					const model = provider?.model || '';
 
 					let response: Response;
 					if (providerType === 'gemini') {
-						response = await fetch(`${baseUrl}/v1beta/models/${model}:generateContent?key=${key}`, {
+						const m = model || 'gemini-2.5-flash';
+						response = await fetch(`${baseUrl}/v1beta/models/${m}:generateContent?key=${key}`, {
 							method: 'POST',
 							headers: { 'Content-Type': 'application/json' },
 							body: JSON.stringify({ contents: [{ parts: [{ text: 'hi' }] }] }),
 						});
 					} else if (providerType === 'anthropic') {
-						response = await fetch(`${baseUrl.replace(/\/+$/, '')}/v1/messages`, {
+						const body: any = { max_tokens: 1, messages: [{ role: 'user', content: 'hi' }] };
+						if (model) body.model = model;
+						response = await fetch(`${baseUrl}/v1/messages`, {
 							method: 'POST',
 							headers: { 'Content-Type': 'application/json', 'x-api-key': key, 'anthropic-version': '2023-06-01' },
-							body: JSON.stringify({ model, max_tokens: 1, messages: [{ role: 'user', content: 'hi' }] }),
+							body: JSON.stringify(body),
 						});
 					} else {
-						response = await fetch(`${baseUrl.replace(/\/+$/, '')}/models`, {
-							method: 'GET',
+						response = await fetch(`${baseUrl}/models`, {
 							headers: { Authorization: `Bearer ${key}` },
 						});
 					}
-					return { key, valid: response.ok, error: response.ok ? null : await response.text() };
+					const valid = providerType === 'gemini' ? response.ok : response.status !== 401;
+					return { key, valid, error: valid ? null : await response.text() };
 				} catch (e: any) {
 					return { key, valid: false, error: e.message };
 				}

@@ -192,7 +192,6 @@ export class AnthropicProtocolAdapter implements ProtocolAdapter {
 							}
 							if (event.name) {
 								hasToolUse = true;
-								console.log('[anthropic-render] tool_use start:', event.name, 'id:', event.id);
 								send('content_block_start', {
 									type: 'content_block_start',
 									index: contentIndex,
@@ -208,7 +207,6 @@ export class AnthropicProtocolAdapter implements ProtocolAdapter {
 							}
 						} else if (event.type === 'done') {
 							doneSent = true;
-							console.log('[anthropic-render] done, finishReason:', event.finishReason, '→ stop_reason:', mapFinishReason(event.finishReason));
 							if (hasThinking) {
 								send('content_block_stop', { type: 'content_block_stop', index: contentIndex });
 								contentIndex++;

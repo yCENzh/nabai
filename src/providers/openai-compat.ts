@@ -101,10 +101,8 @@ export class OpenAICompatProvider implements Provider {
 const STREAM_TIMEOUT_MS = 300_000; // 5 min
 
 async function* openaiStreamToCanonical(response: Response): AsyncIterable<CanonicalStreamEvent> {
-	console.log('[stream] upstream status:', response.status, 'headers:', JSON.stringify(Object.fromEntries(response.headers)));
 	const reader = response.body!.pipeThrough(new TextDecoderStream()).getReader();
 	let buffer = '';
-	let chunkCount = 0;
 	let finishReason: string | undefined;
 
 	while (true) {
@@ -113,8 +111,7 @@ async function* openaiStreamToCanonical(response: Response): AsyncIterable<Canon
 			new Promise<{ done: true; value: undefined }>(r => setTimeout(() => r({ done: true, value: undefined }), STREAM_TIMEOUT_MS)),
 		]);
 		const { done, value } = result;
-		if (done) { console.log('[stream] upstream closed after', chunkCount, 'chunks, buffer:', buffer.length, 'bytes'); break; }
-		chunkCount++;
+		if (done) break;
 		buffer += value;
 		const lines = buffer.split('\n');
 		buffer = lines.pop()!;
@@ -122,10 +119,7 @@ async function* openaiStreamToCanonical(response: Response): AsyncIterable<Canon
 		for (const line of lines) {
 			if (!line.startsWith('data: ')) continue;
 			const data = line.substring(6).trim();
-			if (data === '[DONE]') {
-				console.log('[stream] got [DONE]');
-				continue;
-			}
+			if (data === '[DONE]') continue;
 			if (!data.startsWith('{')) continue;
 			try {
 				const parsed = JSON.parse(data);
@@ -134,7 +128,6 @@ async function* openaiStreamToCanonical(response: Response): AsyncIterable<Canon
 				if (choice.delta?.content) yield { type: 'text_delta', text: choice.delta.content };
 				if (choice.delta?.reasoning_content) yield { type: 'reasoning_delta', text: choice.delta.reasoning_content };
 				if (choice.delta?.tool_calls) {
-					console.log('[stream] tool_calls detected:', JSON.stringify(choice.delta.tool_calls));
 					for (const tc of choice.delta.tool_calls) {
 						yield {
 							type: 'tool_call_delta',
@@ -145,7 +138,7 @@ async function* openaiStreamToCanonical(response: Response): AsyncIterable<Canon
 						};
 					}
 				}
-				if (choice.finish_reason) { console.log('[stream] finish_reason:', choice.finish_reason); finishReason = choice.finish_reason; }
+				if (choice.finish_reason) finishReason = choice.finish_reason;
 			} catch {}
 		}
 	}

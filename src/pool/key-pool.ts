@@ -37,34 +37,6 @@ export async function getRandomApiKey(sql: DurableObjectStorage['sql'], provider
 	}
 }
 
-/** Build health check request based on provider type */
-function buildHealthCheckRequest(providerType: string, baseUrl: string, model?: string): { url: string; method: string; headers: Record<string, string>; body?: string } {
-	const cleanUrl = baseUrl.replace(/\/+$/, '');
-	switch (providerType) {
-		case 'gemini':
-			return {
-				url: `${cleanUrl}/v1beta/models/${model || 'gemini-2.5-flash'}:generateContent`,
-				method: 'POST',
-				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify({ contents: [{ parts: [{ text: 'hi' }] }] }),
-			};
-		case 'anthropic':
-			return {
-				url: `${cleanUrl}/v1/messages`,
-				method: 'POST',
-				headers: { 'Content-Type': 'application/json', 'anthropic-version': '2023-06-01' },
-				body: JSON.stringify({ model, max_tokens: 1, messages: [{ role: 'user', content: 'hi' }] }),
-			};
-		default:
-			return {
-				url: `${cleanUrl}/models`,
-				method: 'GET',
-				headers: {},
-			};
-	}
-}
-
-/** Perform a health check request for a key against its provider */
 async function checkKey(
 	apiKey: string,
 	providerType: string,
@@ -72,32 +44,33 @@ async function checkKey(
 	model: string
 ): Promise<boolean> {
 	try {
-		const req = buildHealthCheckRequest(providerType, baseUrl, model);
+		const cleanUrl = baseUrl.replace(/\/+$/, '');
 
 		if (providerType === 'gemini') {
-			const resp = await fetch(`${req.url}?key=${apiKey}`, {
-				method: req.method,
-				headers: req.headers,
-				body: req.body,
+			const m = model || 'gemini-2.5-flash';
+			const resp = await fetch(`${cleanUrl}/v1beta/models/${m}:generateContent?key=${apiKey}`, {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ contents: [{ parts: [{ text: 'hi' }] }] }),
 			});
 			return resp.ok;
 		}
 
 		if (providerType === 'anthropic') {
-			const resp = await fetch(req.url, {
-				method: req.method,
-				headers: { ...req.headers, 'x-api-key': apiKey },
-				body: req.body,
+			const body: any = { max_tokens: 1, messages: [{ role: 'user', content: 'hi' }] };
+			if (model) body.model = model;
+			const resp = await fetch(`${cleanUrl}/v1/messages`, {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json', 'x-api-key': apiKey, 'anthropic-version': '2023-06-01' },
+				body: JSON.stringify(body),
 			});
 			return resp.status !== 401;
 		}
 
-		// OpenAI-compat: GET /models with Bearer token
-		const resp = await fetch(req.url, {
-			method: req.method,
-			headers: { ...req.headers, Authorization: `Bearer ${apiKey}` },
+		const resp = await fetch(`${cleanUrl}/models`, {
+			headers: { Authorization: `Bearer ${apiKey}` },
 		});
-		return resp.ok;
+		return resp.status !== 401;
 	} catch (e) {
 		console.error(`Health check error for ${maskKey(apiKey)}:`, e);
 		return false;
@@ -110,7 +83,7 @@ export async function runHealthCheck(sql: DurableObjectStorage['sql']) {
 		SELECT k.api_key, p.type, p.base_url, k.model
 		FROM api_keys k
 		JOIN providers p ON p.id = k.provider_id
-		WHERE k.health_check_enabled = 1 AND k.enabled = 1
+		WHERE k.health_check_enabled = 1 AND k.enabled = 1 AND k.model != ''
 	`).raw<any>();
 
 	const keyProviderMap = new Map<string, { type: string; baseUrl: string; model: string }>();
@@ -148,7 +121,7 @@ export async function runHealthCheck(sql: DurableObjectStorage['sql']) {
 	const twelveHoursAgo = Date.now() - 12 * 60 * 60 * 1000;
 	const normalKeys = await sql
 		.exec(
-			"SELECT api_key FROM api_keys WHERE key_group = 'normal' AND (last_checked_at IS NULL OR last_checked_at < ?)",
+			"SELECT api_key FROM api_keys WHERE key_group = 'normal' AND model != '' AND (last_checked_at IS NULL OR last_checked_at < ?)",
 			twelveHoursAgo
 		)
 		.raw<any>();

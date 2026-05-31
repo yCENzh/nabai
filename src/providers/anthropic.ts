@@ -162,10 +162,8 @@ export class AnthropicProvider implements Provider {
 const STREAM_TIMEOUT_MS = 300_000; // 5 min
 
 async function* anthropicStreamToCanonical(response: Response): AsyncIterable<CanonicalStreamEvent> {
-	console.log('[anthropic-stream] upstream status:', response.status);
 	const reader = response.body!.pipeThrough(new TextDecoderStream()).getReader();
 	let buffer = '';
-	let chunkCount = 0;
 	let stopReason: string | undefined;
 
 	while (true) {
@@ -174,8 +172,7 @@ async function* anthropicStreamToCanonical(response: Response): AsyncIterable<Ca
 			new Promise<{ done: true; value: undefined }>(r => setTimeout(() => r({ done: true, value: undefined }), STREAM_TIMEOUT_MS)),
 		]);
 		const { done, value } = result;
-		if (done) { console.log('[anthropic-stream] upstream closed after', chunkCount, 'chunks, buffer:', buffer.length, 'bytes'); break; }
-		chunkCount++;
+		if (done) break;
 		buffer += value;
 		const lines = buffer.split('\n');
 		buffer = lines.pop()!;
@@ -203,12 +200,9 @@ async function* anthropicStreamToCanonical(response: Response): AsyncIterable<Ca
 			} else if (parsed.type === 'message_delta') {
 				if (parsed.delta?.stop_reason) {
 					stopReason = parsed.delta.stop_reason;
-					console.log('[anthropic-stream] stop_reason:', stopReason);
 				}
 			} else if (parsed.type === 'message_stop') {
-				console.log('[anthropic-stream] got message_stop');
 			} else if (parsed.type === 'error') {
-				console.log('[anthropic-stream] upstream error:', parsed.error);
 				yield { type: 'error', code: parsed.error?.type ?? 'api_error', message: parsed.error?.message ?? 'Unknown error' };
 				return;
 			}
