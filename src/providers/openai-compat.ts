@@ -40,7 +40,6 @@ export class OpenAICompatProvider implements Provider {
 
 		for (const m of req.messages ?? []) {
 			if (m.role === 'assistant' && Array.isArray(m.content)) {
-				// Extract tool_use blocks → OpenAI tool_calls format
 				const toolCalls: any[] = [];
 				const textParts: string[] = [];
 				for (const block of m.content) {
@@ -57,7 +56,6 @@ export class OpenAICompatProvider implements Provider {
 					messages.push({ role: 'assistant', content: m.content });
 				}
 			} else if (m.role === 'user' && Array.isArray(m.content)) {
-				// Extract tool_result blocks → separate role:"tool" messages
 				const toolResults: any[] = [];
 				const otherBlocks: any[] = [];
 				for (const block of m.content) {
@@ -71,7 +69,6 @@ export class OpenAICompatProvider implements Provider {
 				if (otherBlocks.length > 0) messages.push({ role: 'user', content: otherBlocks.length === 1 && otherBlocks[0].type === 'text' ? otherBlocks[0].text : otherBlocks });
 				messages.push(...toolResults);
 			} else {
-				// For assistant messages with only text blocks, join into a string for OpenAI
 				let content = m.content;
 				if (m.role === 'assistant' && Array.isArray(m.content)) {
 					const texts = m.content.filter((b: any) => b.type === 'text').map((b: any) => b.text);
@@ -153,7 +150,6 @@ async function* openaiStreamToCanonical(response: Response): AsyncIterable<Canon
 		}
 	}
 
-	// Process remaining buffer after upstream closed
 	if (buffer) {
 		const lines = (buffer + '\n').split('\n');
 		for (const line of lines) {

@@ -24,7 +24,6 @@ export async function handleAnthropicMessages(
 		);
 	}
 
-	// Resolve endpoint → provider config
 	let provider, forwardClientKey, endpoint;
 	try {
 		({ provider, forwardClientKey, endpoint } = await resolveProvider(sql, endpointId));
@@ -32,7 +31,6 @@ export async function handleAnthropicMessages(
 		return anthropicAdapter.renderError(err, { requestId });
 	}
 
-	// Auth: forward_client_key → use client's key directly; otherwise → verify AUTH_KEY, use pool key
 	if (!forwardClientKey && env.AUTH_KEY) {
 		if (apiKey !== env.AUTH_KEY) {
 			return anthropicAdapter.renderError(
@@ -76,7 +74,6 @@ export async function handleAnthropicMessages(
 			return anthropicAdapter.renderJson(canonicalResp, { requestId });
 		}
 
-		// Streaming
 		console.log('[anthropic-handler] invoking upstream, provider:', provider.type);
 		const { response: upstreamResp } = await provider.invoke(canonical, { apiKey });
 		console.log('[anthropic-handler] upstream status:', upstreamResp.status);

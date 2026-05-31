@@ -49,7 +49,6 @@ export class AnthropicProtocolAdapter implements ProtocolAdapter {
 			});
 		}
 
-		// Convert Anthropic tools to canonical format
 		const tools = body.tools?.map((t: any) => ({
 			type: 'function' as const,
 			function: {
@@ -59,7 +58,6 @@ export class AnthropicProtocolAdapter implements ProtocolAdapter {
 			},
 		}));
 
-		// Convert Anthropic tool_choice to canonical (OpenAI) format
 		let tool_choice: CanonicalRequest['tool_choice'];
 		if (body.tool_choice) {
 			if (body.tool_choice.type === 'auto') tool_choice = 'auto';
@@ -134,7 +132,6 @@ export class AnthropicProtocolAdapter implements ProtocolAdapter {
 					controller.enqueue(encoder.encode(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`));
 				};
 
-				// message_start
 				send('message_start', {
 					type: 'message_start',
 					message: {
@@ -184,7 +181,6 @@ export class AnthropicProtocolAdapter implements ProtocolAdapter {
 								delta: { type: 'text_delta', text: event.text },
 							});
 						} else if (event.type === 'tool_call_delta') {
-							// Close any open text/thinking block
 							if (hasThinking) {
 								send('content_block_stop', { type: 'content_block_stop', index: contentIndex });
 								contentIndex++;
@@ -195,7 +191,6 @@ export class AnthropicProtocolAdapter implements ProtocolAdapter {
 								hasText = false;
 							}
 							if (event.name) {
-								// New tool call — start a tool_use content block
 								hasToolUse = true;
 								console.log('[anthropic-render] tool_use start:', event.name, 'id:', event.id);
 								send('content_block_start', {
@@ -247,7 +242,6 @@ export class AnthropicProtocolAdapter implements ProtocolAdapter {
 					});
 				}
 
-				// Upstream closed without sending done — emit terminal events so client doesn't hang
 				if (!doneSent) {
 					if (hasThinking) {
 						send('content_block_stop', { type: 'content_block_stop', index: contentIndex });

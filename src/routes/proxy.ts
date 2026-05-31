@@ -131,24 +131,23 @@ async function handleEmbeddings(req: any, apiKey: string) {
 	}
 
 	let model;
-	if (req.model.startsWith('models/')) {
-		model = req.model;
+	let modelName = req.model;
+	if (modelName.startsWith('models/')) {
+		model = modelName;
 	} else {
-		if (!req.model.startsWith('gemini-')) {
-			req.model = DEFAULT_EMBEDDINGS_MODEL;
+		if (!modelName.startsWith('gemini-')) {
+			modelName = DEFAULT_EMBEDDINGS_MODEL;
 		}
-		model = 'models/' + req.model;
+		model = 'models/' + modelName;
 	}
 
-	if (!Array.isArray(req.input)) {
-		req.input = [req.input];
-	}
+	const inputs = Array.isArray(req.input) ? req.input : [req.input];
 
 	const response = await fetch(`${BASE_URL}/${API_VERSION}/${model}:batchEmbedContents`, {
 		method: 'POST',
 		headers: makeHeaders(apiKey, { 'Content-Type': 'application/json' }),
 		body: JSON.stringify({
-			requests: req.input.map((text: string) => ({
+			requests: inputs.map((text: string) => ({
 				model,
 				content: { parts: { text } },
 				outputDimensionality: req.dimensions,
@@ -167,7 +166,7 @@ async function handleEmbeddings(req: any, apiKey: string) {
 					index,
 					embedding: values,
 				})),
-				model: req.model,
+				model: modelName,
 			},
 			null,
 			'  '
@@ -207,7 +206,6 @@ async function handleCompletions(request: Request, apiKey: string, provider: Pro
 		}
 	}
 
-	// Streaming
 	try {
 		const { response } = await provider.invoke(canonical, { apiKey });
 		console.log('[proxy] upstream response status:', response.status, 'type:', provider.type);
@@ -220,7 +218,6 @@ async function handleCompletions(request: Request, apiKey: string, provider: Pro
 			});
 		}
 
-		// Use TransformStream pipeline for Gemini (legacy), async iterator for others
 		if (provider.type === 'gemini') {
 			const shared = {};
 			const responseBody = response
@@ -249,7 +246,6 @@ async function handleCompletions(request: Request, apiKey: string, provider: Pro
 			return new Response(responseBody, fixCors(response));
 		}
 
-		// For non-Gemini providers, use async iterator → OpenAI SSE
 		const events = provider.parseStream(response, canonical);
 		return adapter.renderStream(events, { requestId });
 	} catch (err) {
@@ -272,7 +268,6 @@ export async function handleOpenAI(
 		return new Response('No API key found in the client headers,please check your request!', { status: 400 });
 	}
 
-	// Resolve endpoint → provider config
 	let provider, forwardClientKey, endpoint;
 	try {
 		({ provider, forwardClientKey, endpoint } = await resolveProvider(sql, endpointId));
@@ -280,7 +275,6 @@ export async function handleOpenAI(
 		return new Response(err.message, { status: err.status || 503 });
 	}
 
-	// Auth: forward_client_key → use client's key directly; otherwise → verify AUTH_KEY, use pool key
 	if (!forwardClientKey && env.AUTH_KEY) {
 		if (apiKey !== env.AUTH_KEY) {
 			return new Response('Unauthorized', { status: 401, headers: fixCors({}).headers });

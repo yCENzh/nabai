@@ -186,7 +186,7 @@ export const Render = ({ isAuthenticated, showWarning }: { isAuthenticated: bool
 								<div class="form-row">
 									<div class="form-field">
 										<label>名称</label>
-										<input type="text" id="pf-name" placeholder="OpenAI 主力" required />
+										<input type="text" id="pf-name" placeholder="纳百川" required />
 									</div>
 									<div class="form-field">
 										<label>Base URL</label>
@@ -237,7 +237,7 @@ export const Render = ({ isAuthenticated, showWarning }: { isAuthenticated: bool
 									</div>
 									<div class="form-field">
 										<label>Model 名称</label>
-										<input type="text" id="ak-model" placeholder="gemini-2.5-flash, gpt-4o" />
+										<input type="text" id="ak-model" placeholder="claude,gpt,deepseek" />
 									</div>
 								</div>
 								<textarea id="api-keys" style="height: 80px" placeholder="请输入API密钥，每行一个"></textarea>
@@ -467,14 +467,14 @@ document.addEventListener('DOMContentLoaded', () => {
 	let totalPages = 1;
 
 	async function loadKeys() {
-		keysTableBody.innerHTML = '<tr class="empty-row"><td colspan="9">加载中...</td></tr>';
+		keysTableBody.innerHTML = '<tr class="empty-row"><td colspan="10">加载中...</td></tr>';
 		try {
 			const resp = await fetch('/api/keys?page=' + currentPage + '&pageSize=' + pageSize);
 			const { keys, total } = await resp.json();
 			totalPages = Math.ceil(total / pageSize);
 			keysTableBody.innerHTML = '';
 			if (keys.length === 0) {
-				keysTableBody.innerHTML = '<tr class="empty-row"><td colspan="9">暂无密钥</td></tr>';
+				keysTableBody.innerHTML = '<tr class="empty-row"><td colspan="10">暂无密钥</td></tr>';
 			} else {
 				keys.forEach(k => {
 					const tr = document.createElement('tr');

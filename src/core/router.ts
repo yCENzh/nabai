@@ -76,23 +76,35 @@ export interface ResolvedProvider {
 
 /** Resolve endpoint → provider config → Provider instance. Throws HttpError on failure. */
 export async function resolveProvider(sql: DurableObjectStorage['sql'], endpointId: string): Promise<ResolvedProvider> {
-	let provider: Provider = new GeminiProvider();
-	let forwardClientKey = false;
 	const endpoint = await getEndpointConfig(sql, endpointId);
-	if (endpoint) {
-		const provConfig = await getProviderConfig(sql, endpoint.provider_id);
-		if (!provConfig) {
-			throw new HttpError(`Provider "${endpoint.provider_id}" is disabled or not found.`, 503);
-		}
-		try {
-			const cfg = JSON.parse(provConfig.config_json);
-			forwardClientKey = cfg.forward_client_key === true;
-		} catch {}
-		if (provConfig.type === 'openai_compat') {
-			provider = new OpenAICompatProvider(provConfig.base_url);
-		} else if (provConfig.type === 'anthropic') {
-			provider = new AnthropicProvider(provConfig.base_url);
-		}
+	if (!endpoint) {
+		throw new HttpError(
+			endpointId === 'default'
+				? 'No endpoint configured. Use /e/:endpointId/ prefix or create an endpoint in the admin panel.'
+				: `Endpoint "${endpointId}" not found or disabled.`,
+			404
+		);
 	}
+
+	const provConfig = await getProviderConfig(sql, endpoint.provider_id);
+	if (!provConfig) {
+		throw new HttpError(`Provider "${endpoint.provider_id}" is disabled or not found.`, 503);
+	}
+
+	let forwardClientKey = false;
+	try {
+		const cfg = JSON.parse(provConfig.config_json);
+		forwardClientKey = cfg.forward_client_key === true;
+	} catch {}
+
+	let provider: Provider;
+	if (provConfig.type === 'openai_compat') {
+		provider = new OpenAICompatProvider(provConfig.base_url);
+	} else if (provConfig.type === 'anthropic') {
+		provider = new AnthropicProvider(provConfig.base_url);
+	} else {
+		provider = new GeminiProvider(provConfig.base_url);
+	}
+
 	return { provider, forwardClientKey, endpoint };
 }

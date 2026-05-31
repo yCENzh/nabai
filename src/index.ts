@@ -6,7 +6,6 @@ import { getCookie, setCookie } from 'hono/cookie';
 
 const app = new Hono<{ Bindings: Env }>();
 
-// 管理页面访问，校验 HOME_ACCESS_KEY
 app.get('/', (c) => {
 	const sessionKey = getCookie(c, 'auth-key');
 	const authKey = getAuthKey(c.req.raw, sessionKey);
@@ -18,7 +17,6 @@ app.get('/', (c) => {
 	return c.html(Render({ isAuthenticated: true, showWarning }));
 });
 
-// 登录接口，校验 HOME_ACCESS_KEY，登录成功后写入 cookie
 app.post('/', async (c) => {
 	const { key } = await c.req.json();
 	if (key === c.env.HOME_ACCESS_KEY) {
@@ -28,12 +26,10 @@ app.post('/', async (c) => {
 	return c.json({ success: false }, 401);
 });
 
-// 静态资源放行
 app.get('/favicon.ico', async (c) => {
 	return c.text('Not found', 404);
 });
 
-// 其它请求转发到 Durable Object
 app.all('*', async (c) => {
 	const id: DurableObjectId = c.env.LOAD_BALANCER.idFromName('loadbalancer');
 	const stub = c.env.LOAD_BALANCER.get(id, { locationHint: 'wnam' });

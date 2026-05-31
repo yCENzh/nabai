@@ -73,17 +73,13 @@ export async function transformMessages(messages: any[]) {
 	let system_instruction;
 
 	for (const item of messages) {
-		switch (item.role) {
-			case 'system':
-				system_instruction = { parts: await transformMsg(item) };
-				continue;
-			case 'assistant':
-				item.role = 'model';
-				break;
-			case 'user':
-				break;
-			default:
-				throw new HttpError(`Unknown message role: "${item.role}"`, 400);
+		const role = item.role === 'assistant' ? 'model' : item.role;
+		if (role === 'system') {
+			system_instruction = { parts: await transformMsg(item) };
+			continue;
+		}
+		if (role !== 'model' && role !== 'user') {
+			throw new HttpError(`Unknown message role: "${item.role}"`, 400);
 		}
 
 		if (system_instruction) {
@@ -93,7 +89,7 @@ export async function transformMessages(messages: any[]) {
 		}
 
 		contents.push({
-			role: item.role,
+			role,
 			parts: await transformMsg(item),
 		});
 	}
@@ -260,6 +256,11 @@ export const GEMINI_REASONS_MAP: Record<string, string> = {
 
 export class GeminiProvider implements Provider {
 	readonly type = 'gemini';
+	private baseUrl: string;
+
+	constructor(baseUrl?: string) {
+		this.baseUrl = baseUrl?.replace(/\/+$/, '') || BASE_URL;
+	}
 
 	parseResponse(data: any, req: CanonicalRequest): CanonicalResponse {
 		const id = 'chatcmpl-' + Math.random().toString(36).substring(2, 15);
@@ -287,7 +288,6 @@ export class GeminiProvider implements Provider {
 		return streamToCanonical(response, req);
 	}
 
-	/** Full invoke: transform CanonicalRequest → Gemini native, fetch, parse response */
 	async invoke(req: CanonicalRequest, ctx: ProviderContext): Promise<{ response: Response }> {
 		const rawReq: any = {
 			model: req.model,
@@ -330,7 +330,7 @@ export class GeminiProvider implements Provider {
 
 		const isStream = req.stream ?? false;
 		const TASK = isStream ? 'streamGenerateContent' : 'generateContent';
-		let url = `${BASE_URL}/${API_VERSION}/models/${model}:${TASK}`;
+		let url = `${this.baseUrl}/${API_VERSION}/models/${model}:${TASK}`;
 		if (isStream) url += '?alt=sse';
 
 		const response = await fetch(url, {
@@ -343,7 +343,6 @@ export class GeminiProvider implements Provider {
 	}
 }
 
-/** Convert Gemini SSE stream to AsyncIterable<CanonicalStreamEvent> */
 async function* streamToCanonical(response: Response, req: CanonicalRequest): AsyncIterable<CanonicalStreamEvent> {
 	const reader = response.body!.pipeThrough(new TextDecoderStream()).getReader();
 	let buffer = '';
@@ -393,7 +392,6 @@ async function* streamToCanonical(response: Response, req: CanonicalRequest): As
 		}
 	}
 
-	// Handle remaining buffer
 	if (buffer.startsWith('data: ')) {
 		const data = buffer.substring(6);
 		if (data.startsWith('{')) {

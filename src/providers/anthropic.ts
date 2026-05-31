@@ -72,7 +72,6 @@ export class AnthropicProvider implements Provider {
 				continue;
 			}
 
-			// Tool result message: role=tool, content is the result text
 			if (msg.role === 'tool' && msg.tool_call_id) {
 				const resultContent = typeof msg.content === 'string' ? msg.content : '';
 				messages.push({
@@ -114,7 +113,6 @@ export class AnthropicProvider implements Provider {
 				content = '';
 			}
 
-			// Assistant message with tool_calls: convert to tool_use content blocks
 			if (msg.role === 'assistant' && msg.tool_calls?.length) {
 				const toolUseBlocks = msg.tool_calls.map((tc: any) => ({
 					type: 'tool_use',
@@ -217,7 +215,6 @@ async function* anthropicStreamToCanonical(response: Response): AsyncIterable<Ca
 		}
 	}
 
-	// Process remaining buffer after upstream closed
 	if (buffer) {
 		const lines = (buffer + '\n').split('\n');
 		for (const line of lines) {
@@ -237,7 +234,6 @@ async function* anthropicStreamToCanonical(response: Response): AsyncIterable<Ca
 				} else if (parsed.type === 'message_delta') {
 					if (parsed.delta?.stop_reason) stopReason = parsed.delta.stop_reason;
 				} else if (parsed.type === 'message_stop') {
-					// terminal — handled by done yield below
 				}
 			} catch {}
 		}

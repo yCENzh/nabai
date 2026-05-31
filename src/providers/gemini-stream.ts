@@ -1,6 +1,5 @@
 import { parseThinkingParts, GEMINI_REASONS_MAP } from './gemini';
 
-/** SSE parser: accumulates text chunks, emits parsed JSON objects */
 export function parseStream(this: any, chunk: string, controller: any) {
 	this.buffer += chunk;
 	const lines = this.buffer.split('\n');
@@ -16,7 +15,6 @@ export function parseStream(this: any, chunk: string, controller: any) {
 	}
 }
 
-/** SSE parser flush: handle remaining buffer */
 export function parseStreamFlush(this: any, controller: any) {
 	if (this.buffer) {
 		const trimmed = this.buffer.trim();
@@ -41,7 +39,6 @@ export function parseStreamFlush(this: any, controller: any) {
 	}
 }
 
-/** Convert parsed Gemini JSON to OpenAI SSE chunks */
 export function toOpenAiStream(this: any, line: any, controller: any) {
 	const { candidates } = line;
 	if (candidates) {
@@ -126,7 +123,6 @@ export function toOpenAiStream(this: any, line: any, controller: any) {
 	}
 }
 
-/** Final flush: emit [DONE] */
 export function toOpenAiStreamFlush(this: any, controller: any) {
 	controller.enqueue('data: [DONE]\n\n');
 }
