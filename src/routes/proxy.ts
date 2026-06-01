@@ -1,5 +1,4 @@
 import { HttpError, fixCors, makeHeaders, generateId, BASE_URL, API_VERSION, maskKey } from '../core/utils';
-import type { CanonicalRequest } from '../core/types';
 import type { Provider } from '../providers/base';
 import { getRandomApiKey, markKeyAbnormal } from '../pool/key-pool';
 import { OpenAIProtocolAdapter } from '../protocols/openai';
@@ -179,6 +178,7 @@ async function handleCompletions(request: Request, apiKey: string, provider: Pro
 	const requestId = 'chatcmpl-' + generateId();
 	const canonical = await adapter.parseRequest(request, { requestId });
 	const isStream = canonical.stream ?? false;
+	console.log('[openai] stream:', isStream, 'tools:', canonical.tools?.length ?? 0);
 
 	if (!isStream) {
 		try {
@@ -265,7 +265,7 @@ export async function handleOpenAI(
 	apiKey = authHeader?.replace('Bearer ', '') ?? null;
 
 	if (!apiKey) {
-		return new Response('No API key found in the client headers,please check your request!', { status: 400 });
+		return new Response('No API key found in the client headers, please check your request!', { status: 400 });
 	}
 
 	let provider, forwardClientKey, endpoint;

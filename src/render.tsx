@@ -237,7 +237,7 @@ export const Render = ({ isAuthenticated, showWarning }: { isAuthenticated: bool
 									</div>
 									<div class="form-field">
 										<label>Model 名称</label>
-										<input type="text" id="ak-model" placeholder="claude,gpt,deepseek" />
+										<input type="text" id="ak-model" placeholder="如 gpt-4o、claude-3-5-sonnet" required />
 									</div>
 								</div>
 								<textarea id="api-keys" style="height: 80px" placeholder="请输入API密钥，每行一个"></textarea>

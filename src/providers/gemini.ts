@@ -263,7 +263,7 @@ export class GeminiProvider implements Provider {
 	}
 
 	parseResponse(data: any, req: CanonicalRequest): CanonicalResponse {
-		const id = 'chatcmpl-' + Math.random().toString(36).substring(2, 15);
+		const id = 'chatcmpl-' + crypto.randomUUID().replace(/-/g, '').substring(0, 29);
 		const model = data.modelVersion ?? req.model;
 
 		return {

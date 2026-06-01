@@ -33,7 +33,6 @@ export class LoadBalancer extends DurableObject {
 	}
 
 	async fetch(request: Request): Promise<Response> {
-		const doStart = Date.now();
 		if (request.method === 'OPTIONS') {
 			return new Response(null, {
 				status: 204,

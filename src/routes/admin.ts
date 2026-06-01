@@ -60,15 +60,17 @@ export async function handleApiKeys(request: Request, sql: DurableObjectStorage[
 		if (!provider_id) {
 			return jsonResponse({ error: 'provider_id 是必填项' }, 400);
 		}
+		if (!model) {
+			return jsonResponse({ error: 'model 是必填项' }, 400);
+		}
 		const hce = health_check_enabled !== false ? 1 : 0;
-		const mdl = model || '';
 		let added = 0;
 		let skipped = 0;
 		for (const key of keys) {
 			const existing = Array.from(sql.exec('SELECT 1 FROM api_keys WHERE api_key = ?', key).raw<any>());
 			if (existing.length > 0) { skipped++; continue; }
 			const keyId = crypto.randomUUID();
-			sql.exec('INSERT INTO api_keys (id, provider_id, model, api_key, health_check_enabled) VALUES (?, ?, ?, ?, ?)', keyId, provider_id, mdl, key, hce);
+			sql.exec('INSERT INTO api_keys (id, provider_id, model, api_key, health_check_enabled) VALUES (?, ?, ?, ?, ?)', keyId, provider_id, model, key, hce);
 			added++;
 		}
 
@@ -89,10 +91,11 @@ export async function handleUpdateApiKey(request: Request, sql: DurableObjectSto
 		};
 		if (!api_key) return jsonResponse({ error: 'api_key 是必填项' }, 400);
 		if (!provider_id) return jsonResponse({ error: 'provider_id 是必填项' }, 400);
+		if (!model) return jsonResponse({ error: 'model 是必填项' }, 400);
 
 		sql.exec(
 			'UPDATE api_keys SET provider_id = ?, model = ?, health_check_enabled = ? WHERE api_key = ?',
-			provider_id, model || '', health_check_enabled !== false ? 1 : 0, api_key
+			provider_id, model, health_check_enabled !== false ? 1 : 0, api_key
 		);
 		return jsonResponse({ message: '密钥更新成功。' });
 	} catch (error: any) {
@@ -176,19 +179,20 @@ export async function handleApiKeysCheck(request: Request, sql: DurableObjectSto
 							body: JSON.stringify({ contents: [{ parts: [{ text: 'hi' }] }] }),
 						});
 					} else if (providerType === 'anthropic') {
-						const body: any = { max_tokens: 1, messages: [{ role: 'user', content: 'hi' }] };
-						if (model) body.model = model;
+						const body = { model, max_tokens: 1, messages: [{ role: 'user', content: 'hi' }] };
 						response = await fetch(`${baseUrl}/v1/messages`, {
 							method: 'POST',
 							headers: { 'Content-Type': 'application/json', 'x-api-key': key, 'anthropic-version': '2023-06-01' },
 							body: JSON.stringify(body),
 						});
 					} else {
-						response = await fetch(`${baseUrl}/models`, {
-							headers: { Authorization: `Bearer ${key}` },
+						response = await fetch(`${baseUrl}/chat/completions`, {
+							method: 'POST',
+							headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${key}` },
+							body: JSON.stringify({ model, max_tokens: 1, messages: [{ role: 'user', content: 'hi' }] }),
 						});
 					}
-					const valid = providerType === 'gemini' ? response.ok : response.status !== 401;
+					const valid = response.ok;
 					return { key, valid, error: valid ? null : await response.text() };
 				} catch (e: any) {
 					return { key, valid: false, error: e.message };
