@@ -47,10 +47,15 @@ export class LoadBalancer extends DurableObject {
 			return new Response('', { status: 204 });
 		}
 
-		// Extract endpoint ID from /e/:endpointId/* prefix
-		const endpointId = extractEndpointId(pathname) ?? 'default';
-		if (endpointId !== 'default') {
-			pathname = stripEndpointPrefix(pathname);
+		// /v1 prefix → default endpoint; /e/:id/ prefix → custom endpoint
+		let endpointId: string;
+		if (pathname.startsWith('/v1/')) {
+			endpointId = 'default';
+		} else {
+			endpointId = extractEndpointId(pathname) ?? 'default';
+			if (endpointId !== 'default') {
+				pathname = stripEndpointPrefix(pathname);
+			}
 		}
 
 		// Admin API
