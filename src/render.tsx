@@ -196,6 +196,7 @@ export const Render = ({ isAuthenticated, showWarning }: { isAuthenticated: bool
 								<div class="form-actions">
 									<label class="checkbox-label"><input type="checkbox" id="pf-enabled" checked /> 启用</label>
 									<label class="checkbox-label"><input type="checkbox" id="pf-forward" /> 透传客户端密钥</label>
+									<label class="checkbox-label"><input type="checkbox" id="pf-rotation" /> 加入默认端点轮询</label>
 									<button type="submit" class="btn btn-primary">保存</button>
 								</div>
 							</form>
@@ -214,6 +215,7 @@ export const Render = ({ isAuthenticated, showWarning }: { isAuthenticated: bool
 											<th>名称</th>
 											<th class="hide-mobile">Base URL</th>
 											<th>状态</th>
+											<th>轮询</th>
 											<th>操作</th>
 										</tr>
 									</thead>
@@ -243,6 +245,7 @@ export const Render = ({ isAuthenticated, showWarning }: { isAuthenticated: bool
 								<textarea id="api-keys" style="height: 80px" placeholder="请输入API密钥，每行一个"></textarea>
 								<div class="form-actions">
 									<label class="checkbox-label"><input type="checkbox" id="ak-health-check" checked /> 启用健康检查</label>
+									<label class="checkbox-label"><input type="checkbox" id="ak-rotation" /> 加入轮询</label>
 									<button type="submit" class="btn btn-primary" id="key-submit-btn">添加密钥</button>
 									<button type="button" class="btn hidden" id="cancel-edit-btn">取消</button>
 								</div>
@@ -264,6 +267,7 @@ export const Render = ({ isAuthenticated, showWarning }: { isAuthenticated: bool
 											<th>Model</th>
 											<th>状态</th>
 											<th>启用</th>
+											<th>轮询</th>
 											<th>健康检查</th>
 											<th class="hide-mobile">最后检查</th>
 											<th class="hide-mobile">失败次数</th>
@@ -400,7 +404,7 @@ document.addEventListener('DOMContentLoaded', () => {
 			});
 
 			if (providers.length === 0) {
-				providersTableBody.innerHTML = '<tr class="empty-row"><td colspan="6">暂无 Provider</td></tr>';
+				providersTableBody.innerHTML = '<tr class="empty-row"><td colspan="7">暂无 Provider</td></tr>';
 				return;
 			}
 			providers.forEach(p => {
@@ -411,8 +415,9 @@ document.addEventListener('DOMContentLoaded', () => {
 					'<td>' + E(p.name) + '</td>' +
 					'<td class="mono hide-mobile">' + E(p.base_url) + '</td>' +
 					'<td>' + (p.enabled ? '<span class="status-ok">启用</span>' : '<span class="status-err">禁用</span>') + '</td>' +
+					'<td>' + (p.in_default_rotation ? '<span class="status-ok">是</span>' : '<span class="status-err">否</span>') + '</td>' +
 					'<td>' +
-						'<button class="btn btn-sm edit-provider" data-id="' + E(p.id) + '" data-type="' + E(p.type) + '" data-name="' + E(p.name) + '" data-url="' + E(p.base_url) + '" data-enabled="' + (p.enabled ? '1' : '0') + '" data-config="' + E(p.config_json || '{}') + '">编辑</button> ' +
+						'<button class="btn btn-sm edit-provider" data-id="' + E(p.id) + '" data-type="' + E(p.type) + '" data-name="' + E(p.name) + '" data-url="' + E(p.base_url) + '" data-enabled="' + (p.enabled ? '1' : '0') + '" data-rotation="' + (p.in_default_rotation ? '1' : '0') + '" data-config="' + E(p.config_json || '{}') + '">编辑</button> ' +
 						'<button class="btn btn-sm btn-danger del-provider" data-id="' + E(p.id) + '">删除</button>' +
 					'</td>';
 				providersTableBody.appendChild(tr);
@@ -430,6 +435,7 @@ document.addEventListener('DOMContentLoaded', () => {
 			base_url: document.getElementById('pf-base-url').value.trim(),
 			enabled: document.getElementById('pf-enabled').checked,
 			config_json: JSON.stringify(config),
+			in_default_rotation: document.getElementById('pf-rotation').checked,
 		};
 		if (!data.id || !data.name || !data.base_url) { toast('请填写所有必填项', true); return; }
 		try {
@@ -454,6 +460,7 @@ document.addEventListener('DOMContentLoaded', () => {
 			document.getElementById('pf-name').value = btn.dataset.name;
 			document.getElementById('pf-base-url').value = btn.dataset.url;
 			document.getElementById('pf-enabled').checked = btn.dataset.enabled === '1';
+			document.getElementById('pf-rotation').checked = btn.dataset.rotation === '1';
 			try { const cfg = JSON.parse(btn.dataset.config || '{}'); document.getElementById('pf-forward').checked = cfg.forward_client_key === true; } catch { document.getElementById('pf-forward').checked = false; }
 		}
 	});
@@ -467,14 +474,14 @@ document.addEventListener('DOMContentLoaded', () => {
 	let totalPages = 1;
 
 	async function loadKeys() {
-		keysTableBody.innerHTML = '<tr class="empty-row"><td colspan="10">加载中...</td></tr>';
+		keysTableBody.innerHTML = '<tr class="empty-row"><td colspan="11">加载中...</td></tr>';
 		try {
 			const resp = await fetch('/api/keys?page=' + currentPage + '&pageSize=' + pageSize);
 			const { keys, total } = await resp.json();
 			totalPages = Math.ceil(total / pageSize);
 			keysTableBody.innerHTML = '';
 			if (keys.length === 0) {
-				keysTableBody.innerHTML = '<tr class="empty-row"><td colspan="10">暂无密钥</td></tr>';
+				keysTableBody.innerHTML = '<tr class="empty-row"><td colspan="11">暂无密钥</td></tr>';
 			} else {
 				keys.forEach(k => {
 					const tr = document.createElement('tr');
@@ -487,10 +494,11 @@ document.addEventListener('DOMContentLoaded', () => {
 						'<td class="text-muted">' + E(k.model || '-') + '</td>' +
 						'<td>' + (k.key_group === 'normal' ? '<span class="status-ok">正常</span>' : '<span class="status-err">' + E(k.key_group) + '</span>') + '</td>' +
 						'<td>' + (k.enabled ? '<span class="status-ok">是</span>' : '<span class="status-err">否</span>') + '</td>' +
+						'<td>' + (k.in_default_rotation ? '<span class="status-ok">是</span>' : '<span class="status-err">否</span>') + '</td>' +
 						'<td class="text-muted">' + (k.health_check_enabled ? '是' : '否') + '</td>' +
 						'<td class="text-muted hide-mobile">' + (k.last_checked_at ? new Date(k.last_checked_at).toLocaleString() : '-') + '</td>' +
 						'<td class="text-muted hide-mobile">' + k.failed_count + '</td>' +
-						'<td><button class="btn btn-sm edit-key" data-key="' + safeKey + '" data-provider="' + E(k.provider_id) + '" data-model="' + E(k.model || '') + '" data-hce="' + (k.health_check_enabled ? '1' : '0') + '">编辑</button></td>';
+						'<td><button class="btn btn-sm edit-key" data-key="' + safeKey + '" data-provider="' + E(k.provider_id) + '" data-model="' + E(k.model || '') + '" data-hce="' + (k.health_check_enabled ? '1' : '0') + '" data-rotation="' + (k.in_default_rotation ? '1' : '0') + '">编辑</button></td>';
 					keysTableBody.appendChild(tr);
 				});
 			}
@@ -564,27 +572,29 @@ document.addEventListener('DOMContentLoaded', () => {
 		const provider_id = document.getElementById('ak-provider').value;
 		const model = document.getElementById('ak-model').value.trim();
 		const health_check_enabled = document.getElementById('ak-health-check').checked;
+		const in_default_rotation = document.getElementById('ak-rotation').checked;
 
 		if (editingKey) {
-			const resp = await fetch('/api/keys', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ api_key: editingKey, provider_id, model, health_check_enabled }) });
+			const resp = await fetch('/api/keys', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ api_key: editingKey, provider_id, model, health_check_enabled, in_default_rotation }) });
 			const result = await resp.json();
 			if (resp.ok) { toast(result.message); cancelEdit(); loadKeys(); }
 			else toast('更新失败: ' + (result.error || ''), true);
 		} else {
 			const keys = document.getElementById('api-keys').value.split('\\n').map(k => k.trim()).filter(Boolean);
 			if (!keys.length) { toast('请输入至少一个密钥', true); return; }
-			const resp = await fetch('/api/keys', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ keys, provider_id, model, health_check_enabled }) });
+			const resp = await fetch('/api/keys', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ keys, provider_id, model, health_check_enabled, in_default_rotation }) });
 			const result = await resp.json();
 			if (resp.ok) { toast(result.message); document.getElementById('api-keys').value = ''; loadKeys(); }
 			else toast('添加失败: ' + (result.error || ''), true);
 		}
 	});
 
-	function startEdit(key, provider, model, hce) {
+	function startEdit(key, provider, model, hce, rotation) {
 		editingKey = key;
 		document.getElementById('ak-provider').value = provider;
 		document.getElementById('ak-model').value = model;
 		document.getElementById('ak-health-check').checked = hce === '1';
+		document.getElementById('ak-rotation').checked = rotation === '1';
 		document.getElementById('api-keys').disabled = true;
 		document.getElementById('api-keys').placeholder = '编辑模式：修改上方属性后点击保存';
 		submitBtn.textContent = '保存修改';
@@ -604,7 +614,7 @@ document.addEventListener('DOMContentLoaded', () => {
 	keysTableBody.addEventListener('click', (e) => {
 		const btn = e.target.closest('.edit-key');
 		if (btn) {
-			startEdit(btn.dataset.key, btn.dataset.provider, btn.dataset.model, btn.dataset.hce);
+			startEdit(btn.dataset.key, btn.dataset.provider, btn.dataset.model, btn.dataset.hce, btn.dataset.rotation);
 			window.scrollTo({ top: 0, behavior: 'smooth' });
 		}
 	});
@@ -629,10 +639,17 @@ document.addEventListener('DOMContentLoaded', () => {
 			const resp = await fetch('/api/endpoints');
 			const { endpoints } = await resp.json();
 			endpointsTableBody.innerHTML = '';
-			if (endpoints.length === 0) {
-				endpointsTableBody.innerHTML = '<tr class="empty-row"><td colspan="5">暂无端点</td></tr>';
-				return;
-			}
+
+			const defaultTr = document.createElement('tr');
+			defaultTr.innerHTML =
+				'<td class="mono">default</td>' +
+				'<td>/ (根域)</td>' +
+				'<td class="text-muted">轮询池</td>' +
+				'<td><span class="status-ok">启用</span></td>' +
+				'<td class="text-muted">系统内置</td>';
+			endpointsTableBody.appendChild(defaultTr);
+
+			if (endpoints.length === 0) return;
 			endpoints.forEach(ep => {
 				const tr = document.createElement('tr');
 				tr.innerHTML =

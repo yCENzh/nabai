@@ -24,9 +24,9 @@ export async function handleAnthropicMessages(
 		);
 	}
 
-	let provider, forwardClientKey, endpoint;
+	let provider, forwardClientKey, endpoint, resolvedApiKey;
 	try {
-		({ provider, forwardClientKey, endpoint } = await resolveProvider(sql, endpointId));
+		({ provider, forwardClientKey, endpoint, apiKey: resolvedApiKey } = await resolveProvider(sql, endpointId));
 	} catch (err: any) {
 		return anthropicAdapter.renderError(err, { requestId });
 	}
@@ -38,13 +38,17 @@ export async function handleAnthropicMessages(
 				{ requestId }
 			);
 		}
-		const providerId = endpoint?.provider_id;
-		apiKey = await getRandomApiKey(sql, providerId);
-		if (!apiKey) {
-			return anthropicAdapter.renderError(
-				new HttpError('No API keys configured in the load balancer.', 500),
-				{ requestId }
-			);
+		if (resolvedApiKey) {
+			apiKey = resolvedApiKey;
+		} else {
+			const providerId = endpoint?.provider_id;
+			apiKey = await getRandomApiKey(sql, providerId);
+			if (!apiKey) {
+				return anthropicAdapter.renderError(
+					new HttpError('No API keys configured in the load balancer.', 500),
+					{ requestId }
+				);
+			}
 		}
 	}
 

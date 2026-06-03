@@ -1,4 +1,4 @@
-import { HttpError } from './utils';
+import { HttpError, maskKey } from './utils';
 import type { Provider } from '../providers/base';
 import { GeminiProvider } from '../providers/gemini';
 import { OpenAICompatProvider } from '../providers/openai-compat';
@@ -36,8 +36,6 @@ export async function getEndpointConfig(
 	sql: DurableObjectStorage['sql'],
 	endpointId: string
 ): Promise<EndpointConfig | null> {
-	if (endpointId === 'default') return null;
-
 	const results = await sql
 		.exec('SELECT id, path, provider_id, enabled FROM endpoints WHERE id = ?', endpointId)
 		.raw<any>();
@@ -72,18 +70,58 @@ export interface ResolvedProvider {
 	provider: Provider;
 	forwardClientKey: boolean;
 	endpoint: EndpointConfig | null;
+	apiKey?: string;
+}
+
+function buildProvider(provConfig: ProviderConfig): Provider {
+	if (provConfig.type === 'openai_compat') return new OpenAICompatProvider(provConfig.base_url);
+	if (provConfig.type === 'anthropic') return new AnthropicProvider(provConfig.base_url);
+	return new GeminiProvider(provConfig.base_url);
+}
+
+async function resolveDefaultEndpoint(sql: DurableObjectStorage['sql']): Promise<ResolvedProvider> {
+	const rows = Array.from(sql.exec(`
+		SELECT k.api_key, p.id, p.type, p.name, p.base_url, p.enabled, p.config_json
+		FROM api_keys k
+		JOIN providers p ON p.id = k.provider_id
+		WHERE p.enabled = 1 AND p.in_default_rotation = 1
+		  AND k.enabled = 1 AND k.in_default_rotation = 1 AND k.key_group = 'normal'
+		ORDER BY RANDOM() LIMIT 1
+	`).raw<any>());
+
+	if (rows.length === 0) {
+		throw new HttpError('No providers or keys configured for default endpoint rotation. Enable "加入默认端点轮询" on a provider and its keys.', 503);
+	}
+
+	const row = rows[0];
+	const apiKey = row[0] as string;
+	const provConfig: ProviderConfig = {
+		id: row[1] as string, type: row[2] as string, name: row[3] as string,
+		base_url: row[4] as string, enabled: row[5] === 1, config_json: row[6] as string,
+	};
+	console.log(`[default-rot] selected key ${maskKey(apiKey)} from provider ${provConfig.id}`);
+	return { provider: buildProvider(provConfig), forwardClientKey: false, endpoint: null, apiKey };
 }
 
 /** Resolve endpoint → provider config → Provider instance. Throws HttpError on failure. */
 export async function resolveProvider(sql: DurableObjectStorage['sql'], endpointId: string): Promise<ResolvedProvider> {
+	if (endpointId === 'default') {
+		const endpoint = await getEndpointConfig(sql, 'default');
+		if (endpoint) {
+			const provConfig = await getProviderConfig(sql, endpoint.provider_id);
+			if (!provConfig) {
+				throw new HttpError(`Provider "${endpoint.provider_id}" is disabled or not found.`, 503);
+			}
+			let forwardClientKey = false;
+			try { forwardClientKey = JSON.parse(provConfig.config_json).forward_client_key === true; } catch {}
+			return { provider: buildProvider(provConfig), forwardClientKey, endpoint };
+		}
+		return resolveDefaultEndpoint(sql);
+	}
+
 	const endpoint = await getEndpointConfig(sql, endpointId);
 	if (!endpoint) {
-		throw new HttpError(
-			endpointId === 'default'
-				? 'No endpoint configured. Use /e/:endpointId/ prefix or create an endpoint in the admin panel.'
-				: `Endpoint "${endpointId}" not found or disabled.`,
-			404
-		);
+		throw new HttpError(`Endpoint "${endpointId}" not found or disabled.`, 404);
 	}
 
 	const provConfig = await getProviderConfig(sql, endpoint.provider_id);
@@ -97,14 +135,5 @@ export async function resolveProvider(sql: DurableObjectStorage['sql'], endpoint
 		forwardClientKey = cfg.forward_client_key === true;
 	} catch {}
 
-	let provider: Provider;
-	if (provConfig.type === 'openai_compat') {
-		provider = new OpenAICompatProvider(provConfig.base_url);
-	} else if (provConfig.type === 'anthropic') {
-		provider = new AnthropicProvider(provConfig.base_url);
-	} else {
-		provider = new GeminiProvider(provConfig.base_url);
-	}
-
-	return { provider, forwardClientKey, endpoint };
+	return { provider: buildProvider(provConfig), forwardClientKey, endpoint };
 }

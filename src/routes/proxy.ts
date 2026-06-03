@@ -268,9 +268,9 @@ export async function handleOpenAI(
 		return new Response('No API key found in the client headers, please check your request!', { status: 400 });
 	}
 
-	let provider, forwardClientKey, endpoint;
+	let provider, forwardClientKey, endpoint, resolvedApiKey;
 	try {
-		({ provider, forwardClientKey, endpoint } = await resolveProvider(sql, endpointId));
+		({ provider, forwardClientKey, endpoint, apiKey: resolvedApiKey } = await resolveProvider(sql, endpointId));
 	} catch (err: any) {
 		return new Response(err.message, { status: err.status || 503 });
 	}
@@ -279,11 +279,15 @@ export async function handleOpenAI(
 		if (apiKey !== env.AUTH_KEY) {
 			return new Response('Unauthorized', { status: 401, headers: fixCors({}).headers });
 		}
-		const providerId = endpoint?.provider_id;
-		apiKey = await getRandomApiKey(sql, providerId);
-		if (!apiKey) {
-			const hint = providerId ? ` for provider "${providerId}"` : '';
-			return new Response(`No API keys available${hint}. Please add keys in the admin panel.`, { status: 500 });
+		if (resolvedApiKey) {
+			apiKey = resolvedApiKey;
+		} else {
+			const providerId = endpoint?.provider_id;
+			apiKey = await getRandomApiKey(sql, providerId);
+			if (!apiKey) {
+				const hint = providerId ? ` for provider "${providerId}"` : '';
+				return new Response(`No API keys available${hint}. Please add keys in the admin panel.`, { status: 500 });
+			}
 		}
 	}
 

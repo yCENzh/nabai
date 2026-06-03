@@ -4,10 +4,10 @@ import { BASE_URL } from '../core/utils';
 
 export async function handleGetProviders(sql: DurableObjectStorage['sql']): Promise<Response> {
 	try {
-		const results = sql.exec('SELECT id, type, name, base_url, enabled, config_json FROM providers ORDER BY created_at').raw<any>();
+		const results = sql.exec('SELECT id, type, name, base_url, enabled, config_json, in_default_rotation FROM providers ORDER BY created_at').raw<any>();
 		const providers = Array.from(results).map((row: any) => ({
 			id: row[0], type: row[1], name: row[2], base_url: row[3],
-			enabled: row[4] === 1, config_json: row[5],
+			enabled: row[4] === 1, config_json: row[5], in_default_rotation: row[6] === 1,
 		}));
 		return jsonResponse({ providers });
 	} catch (error: any) {
@@ -18,15 +18,16 @@ export async function handleGetProviders(sql: DurableObjectStorage['sql']): Prom
 export async function handleUpsertProvider(request: Request, sql: DurableObjectStorage['sql']): Promise<Response> {
 	try {
 		const body = await request.json();
-		const { id, type, name, base_url, enabled, config_json } = body as any;
+		const { id, type, name, base_url, enabled, config_json, in_default_rotation } = body as any;
 		if (!id || !type || !name || !base_url) {
 			return jsonResponse({ error: 'id, type, name, base_url 是必填项' }, 400);
 		}
+		const rotation = in_default_rotation ? 1 : 0;
 		sql.exec(
-			`INSERT INTO providers (id, type, name, base_url, enabled, config_json, updated_at)
-			 VALUES (?, ?, ?, ?, ?, ?, unixepoch())
-			 ON CONFLICT(id) DO UPDATE SET type=excluded.type, name=excluded.name, base_url=excluded.base_url, enabled=excluded.enabled, config_json=excluded.config_json, updated_at=unixepoch()`,
-			id, type, name, base_url, enabled !== false ? 1 : 0, config_json ?? '{}'
+			`INSERT INTO providers (id, type, name, base_url, enabled, config_json, in_default_rotation, updated_at)
+			 VALUES (?, ?, ?, ?, ?, ?, ?, unixepoch())
+			 ON CONFLICT(id) DO UPDATE SET type=excluded.type, name=excluded.name, base_url=excluded.base_url, enabled=excluded.enabled, config_json=excluded.config_json, in_default_rotation=excluded.in_default_rotation, updated_at=unixepoch()`,
+			id, type, name, base_url, enabled !== false ? 1 : 0, config_json ?? '{}', rotation
 		);
 		return jsonResponse({ message: 'Provider 保存成功。' });
 	} catch (error: any) {
@@ -50,8 +51,8 @@ export async function handleDeleteProvider(request: Request, sql: DurableObjectS
 
 export async function handleApiKeys(request: Request, sql: DurableObjectStorage['sql']): Promise<Response> {
 	try {
-		const { keys, provider_id, model, health_check_enabled } = (await request.json()) as {
-			keys: string[]; provider_id?: string; model?: string; health_check_enabled?: boolean;
+		const { keys, provider_id, model, health_check_enabled, in_default_rotation } = (await request.json()) as {
+			keys: string[]; provider_id?: string; model?: string; health_check_enabled?: boolean; in_default_rotation?: boolean;
 		};
 		if (!Array.isArray(keys) || keys.length === 0) {
 			return jsonResponse({ error: '请求体无效，需要一个包含key的非空数组。' }, 400);
@@ -64,13 +65,14 @@ export async function handleApiKeys(request: Request, sql: DurableObjectStorage[
 			return jsonResponse({ error: 'model 是必填项' }, 400);
 		}
 		const hce = health_check_enabled !== false ? 1 : 0;
+		const rotation = in_default_rotation ? 1 : 0;
 		let added = 0;
 		let skipped = 0;
 		for (const key of keys) {
 			const existing = Array.from(sql.exec('SELECT 1 FROM api_keys WHERE api_key = ?', key).raw<any>());
 			if (existing.length > 0) { skipped++; continue; }
 			const keyId = crypto.randomUUID();
-			sql.exec('INSERT INTO api_keys (id, provider_id, model, api_key, health_check_enabled) VALUES (?, ?, ?, ?, ?)', keyId, provider_id, model, key, hce);
+			sql.exec('INSERT INTO api_keys (id, provider_id, model, api_key, health_check_enabled, in_default_rotation) VALUES (?, ?, ?, ?, ?, ?)', keyId, provider_id, model, key, hce, rotation);
 			added++;
 		}
 
@@ -86,16 +88,16 @@ export async function handleApiKeys(request: Request, sql: DurableObjectStorage[
 
 export async function handleUpdateApiKey(request: Request, sql: DurableObjectStorage['sql']): Promise<Response> {
 	try {
-		const { api_key, provider_id, model, health_check_enabled } = (await request.json()) as {
-			api_key: string; provider_id?: string; model?: string; health_check_enabled?: boolean;
+		const { api_key, provider_id, model, health_check_enabled, in_default_rotation } = (await request.json()) as {
+			api_key: string; provider_id?: string; model?: string; health_check_enabled?: boolean; in_default_rotation?: boolean;
 		};
 		if (!api_key) return jsonResponse({ error: 'api_key 是必填项' }, 400);
 		if (!provider_id) return jsonResponse({ error: 'provider_id 是必填项' }, 400);
 		if (!model) return jsonResponse({ error: 'model 是必填项' }, 400);
 
 		sql.exec(
-			'UPDATE api_keys SET provider_id = ?, model = ?, health_check_enabled = ? WHERE api_key = ?',
-			provider_id, model, health_check_enabled !== false ? 1 : 0, api_key
+			'UPDATE api_keys SET provider_id = ?, model = ?, health_check_enabled = ?, in_default_rotation = ? WHERE api_key = ?',
+			provider_id, model, health_check_enabled !== false ? 1 : 0, in_default_rotation ? 1 : 0, api_key
 		);
 		return jsonResponse({ message: '密钥更新成功。' });
 	} catch (error: any) {
@@ -233,7 +235,7 @@ export async function getAllApiKeys(request: Request, sql: DurableObjectStorage[
 		const total = totalArray.length > 0 ? totalArray[0][0] : 0;
 
 		const results = sql
-			.exec(`SELECT api_key, key_group, last_checked_at, failed_count, provider_id, model, health_check_enabled, enabled
+			.exec(`SELECT api_key, key_group, last_checked_at, failed_count, provider_id, model, health_check_enabled, enabled, in_default_rotation
 				   FROM api_keys
 				   LIMIT ? OFFSET ?`, pageSize, offset)
 			.raw<any>();
@@ -242,6 +244,7 @@ export async function getAllApiKeys(request: Request, sql: DurableObjectStorage[
 					api_key: row[0], key_group: row[1],
 					last_checked_at: row[2], failed_count: row[3], provider_id: row[4],
 					model: row[5] || '', health_check_enabled: row[6] === 1, enabled: row[7] === 1,
+					in_default_rotation: row[8] === 1,
 			  }))
 			: [];
 
@@ -303,12 +306,12 @@ export async function handleDeleteEndpoint(request: Request, sql: DurableObjectS
 export async function handleBackup(sql: DurableObjectStorage['sql']): Promise<Response> {
 	try {
 		const providers = Array.from(
-			sql.exec('SELECT id, type, name, base_url, enabled, config_json FROM providers ORDER BY created_at').raw<any>()
-		).map((r: any) => ({ id: r[0], type: r[1], name: r[2], base_url: r[3], enabled: r[4] === 1, config_json: r[5] }));
+			sql.exec('SELECT id, type, name, base_url, enabled, config_json, in_default_rotation FROM providers ORDER BY created_at').raw<any>()
+		).map((r: any) => ({ id: r[0], type: r[1], name: r[2], base_url: r[3], enabled: r[4] === 1, config_json: r[5], in_default_rotation: r[6] === 1 }));
 
 		const keys = Array.from(
-			sql.exec('SELECT k.provider_id, k.model, k.api_key, k.enabled, k.health_check_enabled FROM api_keys k ORDER BY created_at').raw<any>()
-		).map((r: any) => ({ provider_id: r[0], model: r[1], api_key: r[2], enabled: r[3] === 1, health_check_enabled: r[4] === 1 }));
+			sql.exec('SELECT k.provider_id, k.model, k.api_key, k.enabled, k.health_check_enabled, k.in_default_rotation FROM api_keys k ORDER BY created_at').raw<any>()
+		).map((r: any) => ({ provider_id: r[0], model: r[1], api_key: r[2], enabled: r[3] === 1, health_check_enabled: r[4] === 1, in_default_rotation: r[5] === 1 }));
 
 		const endpoints = Array.from(
 			sql.exec('SELECT id, path, provider_id, enabled FROM endpoints ORDER BY created_at').raw<any>()
@@ -334,8 +337,8 @@ export async function handleRestore(request: Request, sql: DurableObjectStorage[
 		for (const p of data.providers) {
 			if (!p.id || !p.type || !p.name || !p.base_url) continue;
 			sql.exec(
-				'INSERT INTO providers (id, type, name, base_url, enabled, config_json) VALUES (?, ?, ?, ?, ?, ?)',
-				p.id, p.type, p.name, p.base_url, p.enabled !== false ? 1 : 0, p.config_json ?? '{}'
+				'INSERT INTO providers (id, type, name, base_url, enabled, config_json, in_default_rotation) VALUES (?, ?, ?, ?, ?, ?, ?)',
+				p.id, p.type, p.name, p.base_url, p.enabled !== false ? 1 : 0, p.config_json ?? '{}', p.in_default_rotation ? 1 : 0
 			);
 		}
 
@@ -343,8 +346,8 @@ export async function handleRestore(request: Request, sql: DurableObjectStorage[
 			if (!k.api_key) continue;
 			const keyId = crypto.randomUUID();
 			sql.exec(
-				'INSERT INTO api_keys (id, provider_id, model, api_key, enabled, health_check_enabled) VALUES (?, ?, ?, ?, ?, ?)',
-				keyId, k.provider_id ?? '', k.model ?? '', k.api_key, k.enabled !== false ? 1 : 0, k.health_check_enabled !== false ? 1 : 0
+				'INSERT INTO api_keys (id, provider_id, model, api_key, enabled, health_check_enabled, in_default_rotation) VALUES (?, ?, ?, ?, ?, ?, ?)',
+				keyId, k.provider_id ?? '', k.model ?? '', k.api_key, k.enabled !== false ? 1 : 0, k.health_check_enabled !== false ? 1 : 0, k.in_default_rotation ? 1 : 0
 			);
 		}
 
