@@ -158,6 +158,7 @@ export async function handleApiKeysCheck(request: Request, sql: DurableObjectSto
 			SELECT k.api_key, p.type, p.base_url, k.model
 			FROM api_keys k
 			JOIN providers p ON p.id = k.provider_id
+			WHERE p.enabled = 1
 		`).raw<any>();
 		const providerMap = new Map<string, { type: string; baseUrl: string; model: string }>();
 		for (const row of Array.from(keyProviderRows)) {
