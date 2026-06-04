@@ -43,7 +43,7 @@ export class OpenAIProtocolAdapter implements ProtocolAdapter {
 		});
 	}
 
-	renderStream(events: AsyncIterable<CanonicalStreamEvent>, opts: { requestId: string }): Response {
+	renderStream(events: AsyncIterable<CanonicalStreamEvent>, opts: { requestId: string; model?: string }): Response {
 		const encoder = new TextEncoder();
 		const stream = new ReadableStream({
 			async start(controller) {
@@ -52,17 +52,20 @@ export class OpenAIProtocolAdapter implements ProtocolAdapter {
 					for await (const event of events) {
 						if (event.type === 'text_delta' || event.type === 'reasoning_delta') {
 							controller.enqueue(encoder.encode(event.type === 'reasoning_delta'
-								? `data: ${JSON.stringify({ id: opts.requestId, object: 'chat.completion.chunk', created: Math.floor(Date.now() / 1000), model: '', choices: [{ index: 0, delta: { reasoning_content: event.text }, finish_reason: null }] })}\n\n`
-								: `data: ${JSON.stringify({ id: opts.requestId, object: 'chat.completion.chunk', created: Math.floor(Date.now() / 1000), model: '', choices: [{ index: 0, delta: { content: event.text }, finish_reason: null }] })}\n\n`
+								? `data: ${JSON.stringify({ id: opts.requestId, object: 'chat.completion.chunk', created: Math.floor(Date.now() / 1000), model: opts.model ?? '', choices: [{ index: 0, delta: { reasoning_content: event.text }, finish_reason: null }] })}\n\n`
+								: `data: ${JSON.stringify({ id: opts.requestId, object: 'chat.completion.chunk', created: Math.floor(Date.now() / 1000), model: opts.model ?? '', choices: [{ index: 0, delta: { content: event.text }, finish_reason: null }] })}\n\n`
 							));
 						} else if (event.type === 'tool_call_delta') {
 							const tc: any = { index: event.index ?? 0 };
 							if (event.id) { tc.id = event.id; tc.type = 'function'; }
 							if (event.name) tc.function = { name: event.name, arguments: event.argumentsDelta ?? '' };
 							else if (event.argumentsDelta) tc.function = { arguments: event.argumentsDelta };
-							controller.enqueue(encoder.encode(`data: ${JSON.stringify({ id: opts.requestId, object: 'chat.completion.chunk', created: Math.floor(Date.now() / 1000), model: '', choices: [{ index: 0, delta: { tool_calls: [tc] }, finish_reason: null }] })}\n\n`));
+							controller.enqueue(encoder.encode(`data: ${JSON.stringify({ id: opts.requestId, object: 'chat.completion.chunk', created: Math.floor(Date.now() / 1000), model: opts.model ?? '', choices: [{ index: 0, delta: { tool_calls: [tc] }, finish_reason: null }] })}\n\n`));
 						} else if (event.type === 'done') {
 							doneSent = true;
+							if (event.usage) {
+								controller.enqueue(encoder.encode(`data: ${JSON.stringify({ id: opts.requestId, object: 'chat.completion.chunk', created: Math.floor(Date.now() / 1000), model: opts.model ?? '', choices: [], usage: { prompt_tokens: event.usage.input_tokens ?? 0, completion_tokens: event.usage.output_tokens ?? 0, total_tokens: (event.usage.input_tokens ?? 0) + (event.usage.output_tokens ?? 0) } })}\n\n`));
+							}
 							controller.enqueue(encoder.encode('data: [DONE]\n\n'));
 						} else if (event.type === 'error') {
 							controller.enqueue(encoder.encode(`data: ${JSON.stringify({ error: { message: event.message, type: 'server_error', code: event.code } })}\n\n`));

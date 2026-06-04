@@ -215,7 +215,10 @@ export class AnthropicProtocolAdapter implements ProtocolAdapter {
 									stop_reason: mapFinishReason(event.finishReason),
 									stop_sequence: null,
 								},
-								usage: { output_tokens: upstreamUsage?.output_tokens ?? 0 },
+								usage: {
+									output_tokens: upstreamUsage?.output_tokens ?? 0,
+									...(upstreamUsage?.input_tokens != null ? { input_tokens: upstreamUsage.input_tokens } : {}),
+								},
 							});
 							send('message_stop', { type: 'message_stop' });
 						} else if (event.type === 'error') {

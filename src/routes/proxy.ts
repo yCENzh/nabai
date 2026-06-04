@@ -247,7 +247,7 @@ async function handleCompletions(request: Request, apiKey: string, provider: Pro
 		}
 
 		const events = provider.parseStream(response, canonical);
-		return adapter.renderStream(events, { requestId });
+		return adapter.renderStream(events, { requestId, model: canonical.model });
 	} catch (err) {
 		console.error('Error in stream completions:', err);
 		return adapter.renderError(err, { requestId });

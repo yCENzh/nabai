@@ -348,6 +348,7 @@ async function* streamToCanonical(response: Response, req: CanonicalRequest): As
 	let buffer = '';
 	let lastTexts: Record<number, string> = {};
 	let lastReasoning: Record<number, string> = {};
+	let usage: { input_tokens?: number; output_tokens?: number } | undefined;
 
 	while (true) {
 		const { done, value } = await reader.read();
@@ -363,6 +364,10 @@ async function* streamToCanonical(response: Response, req: CanonicalRequest): As
 
 			let parsed: any;
 			try { parsed = JSON.parse(data); } catch { continue; }
+
+			if (parsed.usageMetadata) {
+				usage = { input_tokens: parsed.usageMetadata.promptTokenCount, output_tokens: parsed.usageMetadata.candidatesTokenCount };
+			}
 
 			if (parsed.candidates) {
 				for (const cand of parsed.candidates) {
@@ -385,7 +390,7 @@ async function* streamToCanonical(response: Response, req: CanonicalRequest): As
 					}
 
 					if (finishReason) {
-						yield { type: 'done', finishReason: GEMINI_REASONS_MAP[finishReason] || finishReason };
+						yield { type: 'done', finishReason: GEMINI_REASONS_MAP[finishReason] || finishReason, usage };
 					}
 				}
 			}
@@ -412,7 +417,7 @@ async function* streamToCanonical(response: Response, req: CanonicalRequest): As
 							const delta = finalContent.length > last.length ? finalContent.substring(last.length) : finalContent;
 							if (delta) yield { type: 'text_delta', text: delta };
 						}
-						if (finishReason) yield { type: 'done', finishReason: GEMINI_REASONS_MAP[finishReason] || finishReason };
+						if (finishReason) yield { type: 'done', finishReason: GEMINI_REASONS_MAP[finishReason] || finishReason, usage };
 					}
 				}
 			} catch {}
