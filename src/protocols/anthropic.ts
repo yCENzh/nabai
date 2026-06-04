@@ -125,6 +125,7 @@ export class AnthropicProtocolAdapter implements ProtocolAdapter {
 		let hasText = false;
 		let hasToolUse = false;
 		let doneSent = false;
+		let upstreamUsage: { input_tokens?: number; output_tokens?: number } | undefined;
 
 		const stream = new ReadableStream({
 			async start(controller) {
@@ -205,6 +206,7 @@ export class AnthropicProtocolAdapter implements ProtocolAdapter {
 							}
 						} else if (event.type === 'done') {
 							doneSent = true;
+							if (event.usage) upstreamUsage = event.usage;
 							closeBlock();
 
 							send('message_delta', {
@@ -213,7 +215,7 @@ export class AnthropicProtocolAdapter implements ProtocolAdapter {
 									stop_reason: mapFinishReason(event.finishReason),
 									stop_sequence: null,
 								},
-								usage: { output_tokens: 0 },
+								usage: { output_tokens: upstreamUsage?.output_tokens ?? 0 },
 							});
 							send('message_stop', { type: 'message_stop' });
 						} else if (event.type === 'error') {

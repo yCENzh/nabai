@@ -100,11 +100,17 @@ export class OpenAICompatProvider implements Provider {
 
 const STREAM_TIMEOUT_MS = 300_000; // 5 min
 
-function parseOpenAiChunk(parsed: any): { events: CanonicalStreamEvent[]; finishReason?: string } {
+function parseOpenAiChunk(parsed: any): { events: CanonicalStreamEvent[]; finishReason?: string; usage?: { input_tokens?: number; output_tokens?: number } } {
 	const events: CanonicalStreamEvent[] = [];
 	let finishReason: string | undefined;
+	let usage: { input_tokens?: number; output_tokens?: number } | undefined;
+
+	if (parsed.usage) {
+		usage = { input_tokens: parsed.usage.prompt_tokens, output_tokens: parsed.usage.completion_tokens };
+	}
+
 	const choice = parsed.choices?.[0];
-	if (!choice) return { events, finishReason };
+	if (!choice) return { events, finishReason, usage };
 	if (choice.delta?.content) events.push({ type: 'text_delta', text: choice.delta.content });
 	if (choice.delta?.reasoning_content) events.push({ type: 'reasoning_delta', text: choice.delta.reasoning_content });
 	if (choice.delta?.tool_calls) {
@@ -113,13 +119,14 @@ function parseOpenAiChunk(parsed: any): { events: CanonicalStreamEvent[]; finish
 		}
 	}
 	if (choice.finish_reason) finishReason = choice.finish_reason;
-	return { events, finishReason };
+	return { events, finishReason, usage };
 }
 
 async function* openaiStreamToCanonical(response: Response): AsyncIterable<CanonicalStreamEvent> {
 	const reader = response.body!.pipeThrough(new TextDecoderStream()).getReader();
 	let buffer = '';
 	let finishReason: string | undefined;
+	let usage: { input_tokens?: number; output_tokens?: number } | undefined;
 
 	while (true) {
 		const result = await Promise.race([
@@ -137,8 +144,9 @@ async function* openaiStreamToCanonical(response: Response): AsyncIterable<Canon
 			if (data === '[DONE]') continue;
 			if (!data.startsWith('{')) continue;
 			try {
-				const { events, finishReason: fr } = parseOpenAiChunk(JSON.parse(data));
+				const { events, finishReason: fr, usage: u } = parseOpenAiChunk(JSON.parse(data));
 				if (fr) finishReason = fr;
+				if (u) usage = u;
 				yield* events;
 			} catch {}
 		}
@@ -152,11 +160,12 @@ async function* openaiStreamToCanonical(response: Response): AsyncIterable<Canon
 			if (data === '[DONE]') continue;
 			if (!data.startsWith('{')) continue;
 			try {
-				const { events, finishReason: fr } = parseOpenAiChunk(JSON.parse(data));
+				const { events, finishReason: fr, usage: u } = parseOpenAiChunk(JSON.parse(data));
 				if (fr) finishReason = fr;
+				if (u) usage = u;
 				yield* events;
 			} catch {}
 		}
 	}
-	yield { type: 'done', finishReason: finishReason ?? 'stop' };
+	yield { type: 'done', finishReason: finishReason ?? 'stop', usage };
 }

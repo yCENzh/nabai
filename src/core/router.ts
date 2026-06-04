@@ -85,7 +85,8 @@ async function resolveDefaultEndpoint(sql: DurableObjectStorage['sql'], model: s
 		FROM api_keys k
 		JOIN providers p ON p.id = k.provider_id
 		WHERE p.enabled = 1 AND p.in_default_rotation = 1
-		  AND k.enabled = 1 AND k.in_default_rotation = 1 AND k.model = ? AND k.key_group = 'normal'
+		  AND k.enabled = 1 AND k.in_default_rotation = 1 AND k.key_group = 'normal'
+		  AND k.model = ?
 		ORDER BY RANDOM() LIMIT 1
 	`, model).raw<any>());
 

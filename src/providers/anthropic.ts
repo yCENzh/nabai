@@ -159,9 +159,10 @@ export class AnthropicProvider implements Provider {
 
 const STREAM_TIMEOUT_MS = 300_000; // 5 min
 
-function parseSseEvents(parsed: any): { events: CanonicalStreamEvent[]; stopReason?: string; isError?: boolean } {
+function parseSseEvents(parsed: any): { events: CanonicalStreamEvent[]; stopReason?: string; usage?: { input_tokens?: number; output_tokens?: number }; isError?: boolean } {
 	const events: CanonicalStreamEvent[] = [];
 	let stopReason: string | undefined;
+	let usage: { input_tokens?: number; output_tokens?: number } | undefined;
 	let isError = false;
 
 	if (parsed.type === 'content_block_start') {
@@ -174,18 +175,22 @@ function parseSseEvents(parsed: any): { events: CanonicalStreamEvent[]; stopReas
 		else if (parsed.delta?.type === 'input_json_delta') events.push({ type: 'tool_call_delta', id: '', index: parsed.index, argumentsDelta: parsed.delta.partial_json });
 	} else if (parsed.type === 'message_delta') {
 		if (parsed.delta?.stop_reason) stopReason = parsed.delta.stop_reason;
+		if (parsed.usage) usage = parsed.usage;
+	} else if (parsed.type === 'message_start') {
+		if (parsed.message?.usage) usage = parsed.message.usage;
 	} else if (parsed.type === 'error') {
 		events.push({ type: 'error', code: parsed.error?.type ?? 'api_error', message: parsed.error?.message ?? 'Unknown error' });
 		isError = true;
 	}
 
-	return { events, stopReason, isError };
+	return { events, stopReason, usage, isError };
 }
 
 async function* anthropicStreamToCanonical(response: Response): AsyncIterable<CanonicalStreamEvent> {
 	const reader = response.body!.pipeThrough(new TextDecoderStream()).getReader();
 	let buffer = '';
 	let stopReason: string | undefined;
+	let usage: { input_tokens?: number; output_tokens?: number } | undefined;
 
 	while (true) {
 		const result = await Promise.race([
@@ -202,10 +207,11 @@ async function* anthropicStreamToCanonical(response: Response): AsyncIterable<Ca
 			const data = line.substring(6).trim();
 			if (!data.startsWith('{')) continue;
 			try {
-				const { events, stopReason: sr, isError } = parseSseEvents(JSON.parse(data));
-				if (sr) stopReason = sr;
-				yield* events;
-				if (isError) return;
+				const result = parseSseEvents(JSON.parse(data));
+				if (result.stopReason) stopReason = result.stopReason;
+				if (result.usage) usage = result.usage;
+				yield* result.events;
+				if (result.isError) return;
 			} catch {}
 		}
 	}
@@ -217,11 +223,12 @@ async function* anthropicStreamToCanonical(response: Response): AsyncIterable<Ca
 			const data = line.substring(6).trim();
 			if (!data.startsWith('{')) continue;
 			try {
-				const { events, stopReason: sr } = parseSseEvents(JSON.parse(data));
-				if (sr) stopReason = sr;
-				yield* events;
+				const result = parseSseEvents(JSON.parse(data));
+				if (result.stopReason) stopReason = result.stopReason;
+				if (result.usage) usage = result.usage;
+				yield* result.events;
 			} catch {}
 		}
 	}
-	yield { type: 'done', finishReason: stopReason };
+	yield { type: 'done', finishReason: stopReason, usage };
 }
