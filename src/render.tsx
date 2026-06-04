@@ -308,7 +308,7 @@ export const Render = ({ isAuthenticated, showWarning }: { isAuthenticated: bool
 									</div>
 									<div class="form-field">
 										<label>路径</label>
-										<input type="text" id="ef-path" placeholder="/v1" required />
+										<input type="text" id="ef-path" placeholder="必须以 / 开头，如 /v1" required />
 									</div>
 									<div class="form-field">
 										<label>Provider</label>
@@ -639,7 +639,7 @@ document.addEventListener('DOMContentLoaded', () => {
 			const defaultTr = document.createElement('tr');
 			defaultTr.innerHTML =
 				'<td class="mono">default</td>' +
-				'<td>/ (根域)</td>' +
+				'<td>/v1</td>' +
 				'<td class="text-muted">轮询池</td>' +
 				'<td><span class="status-ok">启用</span></td>' +
 				'<td class="text-muted">系统内置</td>';
@@ -650,7 +650,7 @@ document.addEventListener('DOMContentLoaded', () => {
 				const tr = document.createElement('tr');
 				tr.innerHTML =
 					'<td class="mono">' + E(ep.id) + '</td>' +
-					'<td>' + E(ep.path) + '</td>' +
+					'<td class="mono">/e/' + E(ep.id) + '</td>' +
 					'<td>' + E(ep.provider_id) + '</td>' +
 					'<td>' + (ep.enabled ? '<span class="status-ok">启用</span>' : '<span class="status-err">禁用</span>') + '</td>' +
 					'<td>' +
@@ -664,9 +664,11 @@ document.addEventListener('DOMContentLoaded', () => {
 
 	endpointForm.addEventListener('submit', async (e) => {
 		e.preventDefault();
+		let path = document.getElementById('ef-path').value.trim();
+		if (path && !path.startsWith('/')) path = '/' + path;
 		const data = {
 			id: document.getElementById('ef-id').value.trim(),
-			path: document.getElementById('ef-path').value.trim(),
+			path,
 			provider_id: document.getElementById('ef-provider').value,
 			enabled: document.getElementById('ef-enabled').checked,
 		};
