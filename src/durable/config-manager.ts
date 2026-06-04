@@ -24,8 +24,6 @@ export class ConfigManager {
 				health_check_enabled INTEGER NOT NULL DEFAULT 1,
 				key_group TEXT NOT NULL DEFAULT 'normal',
 				in_default_rotation INTEGER NOT NULL DEFAULT 0,
-				last_checked_at INTEGER,
-				failed_count INTEGER NOT NULL DEFAULT 0,
 				created_at INTEGER NOT NULL DEFAULT (unixepoch()),
 				FOREIGN KEY(provider_id) REFERENCES providers(id)
 			);

@@ -79,18 +79,18 @@ function buildProvider(provConfig: ProviderConfig): Provider {
 	return new GeminiProvider(provConfig.base_url);
 }
 
-async function resolveDefaultEndpoint(sql: DurableObjectStorage['sql']): Promise<ResolvedProvider> {
+async function resolveDefaultEndpoint(sql: DurableObjectStorage['sql'], model: string): Promise<ResolvedProvider> {
 	const rows = Array.from(sql.exec(`
 		SELECT k.api_key, p.id, p.type, p.name, p.base_url, p.enabled, p.config_json
 		FROM api_keys k
 		JOIN providers p ON p.id = k.provider_id
 		WHERE p.enabled = 1 AND p.in_default_rotation = 1
-		  AND k.enabled = 1 AND k.in_default_rotation = 1 AND k.key_group = 'normal'
+		  AND k.enabled = 1 AND k.in_default_rotation = 1 AND k.model = ? AND k.key_group = 'normal'
 		ORDER BY RANDOM() LIMIT 1
-	`).raw<any>());
+	`, model).raw<any>());
 
 	if (rows.length === 0) {
-		throw new HttpError('No providers or keys configured for default endpoint rotation. Enable "加入默认端点轮询" on a provider and its keys.', 503);
+		throw new HttpError(`No rotation keys available for model "${model}". Add a key with this model and enable "加入轮询".`, 503);
 	}
 
 	const row = rows[0];
@@ -104,7 +104,7 @@ async function resolveDefaultEndpoint(sql: DurableObjectStorage['sql']): Promise
 }
 
 /** Resolve endpoint → provider config → Provider instance. Throws HttpError on failure. */
-export async function resolveProvider(sql: DurableObjectStorage['sql'], endpointId: string): Promise<ResolvedProvider> {
+export async function resolveProvider(sql: DurableObjectStorage['sql'], endpointId: string, model?: string): Promise<ResolvedProvider> {
 	if (endpointId === 'default') {
 		const endpoint = await getEndpointConfig(sql, 'default');
 		if (endpoint) {
@@ -116,7 +116,8 @@ export async function resolveProvider(sql: DurableObjectStorage['sql'], endpoint
 			try { forwardClientKey = JSON.parse(provConfig.config_json).forward_client_key === true; } catch {}
 			return { provider: buildProvider(provConfig), forwardClientKey, endpoint };
 		}
-		return resolveDefaultEndpoint(sql);
+		if (!model) throw new HttpError('Model is required for default endpoint rotation.', 400);
+		return resolveDefaultEndpoint(sql, model);
 	}
 
 	const endpoint = await getEndpointConfig(sql, endpointId);

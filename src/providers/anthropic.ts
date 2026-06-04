@@ -105,8 +105,6 @@ export class AnthropicProvider implements Provider {
 							return { type: 'tool_result', tool_use_id: json.tool_call_id, content: json.result };
 						}
 					}
-					if (block.type === 'tool_result') return block;
-					if (block.type === 'tool_use') return block;
 					return block;
 				});
 			} else {
@@ -161,6 +159,29 @@ export class AnthropicProvider implements Provider {
 
 const STREAM_TIMEOUT_MS = 300_000; // 5 min
 
+function parseSseEvents(parsed: any): { events: CanonicalStreamEvent[]; stopReason?: string; isError?: boolean } {
+	const events: CanonicalStreamEvent[] = [];
+	let stopReason: string | undefined;
+	let isError = false;
+
+	if (parsed.type === 'content_block_start') {
+		if (parsed.content_block?.type === 'tool_use') {
+			events.push({ type: 'tool_call_delta', id: parsed.content_block.id, index: parsed.index, name: parsed.content_block.name });
+		}
+	} else if (parsed.type === 'content_block_delta') {
+		if (parsed.delta?.type === 'text_delta') events.push({ type: 'text_delta', text: parsed.delta.text });
+		else if (parsed.delta?.type === 'thinking_delta') events.push({ type: 'reasoning_delta', text: parsed.delta.thinking });
+		else if (parsed.delta?.type === 'input_json_delta') events.push({ type: 'tool_call_delta', id: '', index: parsed.index, argumentsDelta: parsed.delta.partial_json });
+	} else if (parsed.type === 'message_delta') {
+		if (parsed.delta?.stop_reason) stopReason = parsed.delta.stop_reason;
+	} else if (parsed.type === 'error') {
+		events.push({ type: 'error', code: parsed.error?.type ?? 'api_error', message: parsed.error?.message ?? 'Unknown error' });
+		isError = true;
+	}
+
+	return { events, stopReason, isError };
+}
+
 async function* anthropicStreamToCanonical(response: Response): AsyncIterable<CanonicalStreamEvent> {
 	const reader = response.body!.pipeThrough(new TextDecoderStream()).getReader();
 	let buffer = '';
@@ -171,9 +192,8 @@ async function* anthropicStreamToCanonical(response: Response): AsyncIterable<Ca
 			reader.read(),
 			new Promise<{ done: true; value: undefined }>(r => setTimeout(() => r({ done: true, value: undefined }), STREAM_TIMEOUT_MS)),
 		]);
-		const { done, value } = result;
-		if (done) break;
-		buffer += value;
+		if (result.done) break;
+		buffer += result.value;
 		const lines = buffer.split('\n');
 		buffer = lines.pop()!;
 
@@ -181,31 +201,12 @@ async function* anthropicStreamToCanonical(response: Response): AsyncIterable<Ca
 			if (!line.startsWith('data: ')) continue;
 			const data = line.substring(6).trim();
 			if (!data.startsWith('{')) continue;
-
-			let parsed: any;
-			try { parsed = JSON.parse(data); } catch { continue; }
-
-			if (parsed.type === 'content_block_start') {
-				if (parsed.content_block?.type === 'tool_use') {
-					yield { type: 'tool_call_delta', id: parsed.content_block.id, index: parsed.index, name: parsed.content_block.name };
-				}
-			} else if (parsed.type === 'content_block_delta') {
-				if (parsed.delta?.type === 'text_delta') {
-					yield { type: 'text_delta', text: parsed.delta.text };
-				} else if (parsed.delta?.type === 'thinking_delta') {
-					yield { type: 'reasoning_delta', text: parsed.delta.thinking };
-				} else if (parsed.delta?.type === 'input_json_delta') {
-					yield { type: 'tool_call_delta', id: '', index: parsed.index, argumentsDelta: parsed.delta.partial_json };
-				}
-			} else if (parsed.type === 'message_delta') {
-				if (parsed.delta?.stop_reason) {
-					stopReason = parsed.delta.stop_reason;
-				}
-			} else if (parsed.type === 'message_stop') {
-			} else if (parsed.type === 'error') {
-				yield { type: 'error', code: parsed.error?.type ?? 'api_error', message: parsed.error?.message ?? 'Unknown error' };
-				return;
-			}
+			try {
+				const { events, stopReason: sr, isError } = parseSseEvents(JSON.parse(data));
+				if (sr) stopReason = sr;
+				yield* events;
+				if (isError) return;
+			} catch {}
 		}
 	}
 
@@ -216,19 +217,9 @@ async function* anthropicStreamToCanonical(response: Response): AsyncIterable<Ca
 			const data = line.substring(6).trim();
 			if (!data.startsWith('{')) continue;
 			try {
-				const parsed = JSON.parse(data);
-				if (parsed.type === 'content_block_start') {
-					if (parsed.content_block?.type === 'tool_use') {
-						yield { type: 'tool_call_delta', id: parsed.content_block.id, index: parsed.index, name: parsed.content_block.name };
-					}
-				} else if (parsed.type === 'content_block_delta') {
-					if (parsed.delta?.type === 'text_delta') yield { type: 'text_delta', text: parsed.delta.text };
-					else if (parsed.delta?.type === 'thinking_delta') yield { type: 'reasoning_delta', text: parsed.delta.thinking };
-					else if (parsed.delta?.type === 'input_json_delta') yield { type: 'tool_call_delta', id: '', index: parsed.index, argumentsDelta: parsed.delta.partial_json };
-				} else if (parsed.type === 'message_delta') {
-					if (parsed.delta?.stop_reason) stopReason = parsed.delta.stop_reason;
-				} else if (parsed.type === 'message_stop') {
-				}
+				const { events, stopReason: sr } = parseSseEvents(JSON.parse(data));
+				if (sr) stopReason = sr;
+				yield* events;
 			} catch {}
 		}
 	}

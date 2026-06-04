@@ -25,8 +25,14 @@ export async function handleAnthropicMessages(
 	}
 
 	let provider, forwardClientKey, endpoint, resolvedApiKey;
+	let modelForRouting: string | undefined;
 	try {
-		({ provider, forwardClientKey, endpoint, apiKey: resolvedApiKey } = await resolveProvider(sql, endpointId));
+		const cloned = request.clone();
+		const body: any = await cloned.json();
+		modelForRouting = body.model;
+	} catch {}
+	try {
+		({ provider, forwardClientKey, endpoint, apiKey: resolvedApiKey } = await resolveProvider(sql, endpointId, modelForRouting));
 	} catch (err: any) {
 		return anthropicAdapter.renderError(err, { requestId });
 	}

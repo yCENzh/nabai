@@ -269,8 +269,6 @@ export const Render = ({ isAuthenticated, showWarning }: { isAuthenticated: bool
 											<th>启用</th>
 											<th>轮询</th>
 											<th>健康检查</th>
-											<th class="hide-mobile">最后检查</th>
-											<th class="hide-mobile">失败次数</th>
 											<th>操作</th>
 										</tr>
 									</thead>
@@ -474,14 +472,14 @@ document.addEventListener('DOMContentLoaded', () => {
 	let totalPages = 1;
 
 	async function loadKeys() {
-		keysTableBody.innerHTML = '<tr class="empty-row"><td colspan="11">加载中...</td></tr>';
+		keysTableBody.innerHTML = '<tr class="empty-row"><td colspan="9">加载中...</td></tr>';
 		try {
 			const resp = await fetch('/api/keys?page=' + currentPage + '&pageSize=' + pageSize);
 			const { keys, total } = await resp.json();
 			totalPages = Math.ceil(total / pageSize);
 			keysTableBody.innerHTML = '';
 			if (keys.length === 0) {
-				keysTableBody.innerHTML = '<tr class="empty-row"><td colspan="11">暂无密钥</td></tr>';
+				keysTableBody.innerHTML = '<tr class="empty-row"><td colspan="9">暂无密钥</td></tr>';
 			} else {
 				keys.forEach(k => {
 					const tr = document.createElement('tr');
@@ -496,8 +494,6 @@ document.addEventListener('DOMContentLoaded', () => {
 						'<td>' + (k.enabled ? '<span class="status-ok">是</span>' : '<span class="status-err">否</span>') + '</td>' +
 						'<td>' + (k.in_default_rotation ? '<span class="status-ok">是</span>' : '<span class="status-err">否</span>') + '</td>' +
 						'<td class="text-muted">' + (k.health_check_enabled ? '是' : '否') + '</td>' +
-						'<td class="text-muted hide-mobile">' + (k.last_checked_at ? new Date(k.last_checked_at).toLocaleString() : '-') + '</td>' +
-						'<td class="text-muted hide-mobile">' + k.failed_count + '</td>' +
 						'<td><button class="btn btn-sm edit-key" data-key="' + safeKey + '" data-provider="' + E(k.provider_id) + '" data-model="' + E(k.model || '') + '" data-hce="' + (k.health_check_enabled ? '1' : '0') + '" data-rotation="' + (k.in_default_rotation ? '1' : '0') + '">编辑</button></td>';
 					keysTableBody.appendChild(tr);
 				});

@@ -100,6 +100,22 @@ export class OpenAICompatProvider implements Provider {
 
 const STREAM_TIMEOUT_MS = 300_000; // 5 min
 
+function parseOpenAiChunk(parsed: any): { events: CanonicalStreamEvent[]; finishReason?: string } {
+	const events: CanonicalStreamEvent[] = [];
+	let finishReason: string | undefined;
+	const choice = parsed.choices?.[0];
+	if (!choice) return { events, finishReason };
+	if (choice.delta?.content) events.push({ type: 'text_delta', text: choice.delta.content });
+	if (choice.delta?.reasoning_content) events.push({ type: 'reasoning_delta', text: choice.delta.reasoning_content });
+	if (choice.delta?.tool_calls) {
+		for (const tc of choice.delta.tool_calls) {
+			events.push({ type: 'tool_call_delta', id: tc.id ?? '', index: tc.index, name: tc.function?.name, argumentsDelta: tc.function?.arguments });
+		}
+	}
+	if (choice.finish_reason) finishReason = choice.finish_reason;
+	return { events, finishReason };
+}
+
 async function* openaiStreamToCanonical(response: Response): AsyncIterable<CanonicalStreamEvent> {
 	const reader = response.body!.pipeThrough(new TextDecoderStream()).getReader();
 	let buffer = '';
@@ -110,9 +126,8 @@ async function* openaiStreamToCanonical(response: Response): AsyncIterable<Canon
 			reader.read(),
 			new Promise<{ done: true; value: undefined }>(r => setTimeout(() => r({ done: true, value: undefined }), STREAM_TIMEOUT_MS)),
 		]);
-		const { done, value } = result;
-		if (done) break;
-		buffer += value;
+		if (result.done) break;
+		buffer += result.value;
 		const lines = buffer.split('\n');
 		buffer = lines.pop()!;
 
@@ -122,23 +137,9 @@ async function* openaiStreamToCanonical(response: Response): AsyncIterable<Canon
 			if (data === '[DONE]') continue;
 			if (!data.startsWith('{')) continue;
 			try {
-				const parsed = JSON.parse(data);
-				const choice = parsed.choices?.[0];
-				if (!choice) continue;
-				if (choice.delta?.content) yield { type: 'text_delta', text: choice.delta.content };
-				if (choice.delta?.reasoning_content) yield { type: 'reasoning_delta', text: choice.delta.reasoning_content };
-				if (choice.delta?.tool_calls) {
-					for (const tc of choice.delta.tool_calls) {
-						yield {
-							type: 'tool_call_delta',
-							id: tc.id ?? '',
-							index: tc.index,
-							name: tc.function?.name,
-							argumentsDelta: tc.function?.arguments,
-						};
-					}
-				}
-				if (choice.finish_reason) finishReason = choice.finish_reason;
+				const { events, finishReason: fr } = parseOpenAiChunk(JSON.parse(data));
+				if (fr) finishReason = fr;
+				yield* events;
 			} catch {}
 		}
 	}
@@ -151,18 +152,9 @@ async function* openaiStreamToCanonical(response: Response): AsyncIterable<Canon
 			if (data === '[DONE]') continue;
 			if (!data.startsWith('{')) continue;
 			try {
-				const parsed = JSON.parse(data);
-				const choice = parsed.choices?.[0];
-				if (choice) {
-					if (choice.delta?.content) yield { type: 'text_delta', text: choice.delta.content };
-					if (choice.delta?.reasoning_content) yield { type: 'reasoning_delta', text: choice.delta.reasoning_content };
-					if (choice.delta?.tool_calls) {
-						for (const tc of choice.delta.tool_calls) {
-							yield { type: 'tool_call_delta', id: tc.id ?? '', index: tc.index, name: tc.function?.name, argumentsDelta: tc.function?.arguments };
-						}
-					}
-					if (choice.finish_reason) finishReason = choice.finish_reason;
-				}
+				const { events, finishReason: fr } = parseOpenAiChunk(JSON.parse(data));
+				if (fr) finishReason = fr;
+				yield* events;
 			} catch {}
 		}
 	}

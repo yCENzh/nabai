@@ -205,15 +205,9 @@ export async function handleApiKeysCheck(request: Request, sql: DurableObjectSto
 
 		for (const result of checkResults) {
 			if (result.valid) {
-				sql.exec(
-					"UPDATE api_keys SET key_group = 'normal', failed_count = 0, last_checked_at = ? WHERE api_key = ?",
-					Date.now(), result.key
-				);
+				sql.exec("UPDATE api_keys SET key_group = 'normal' WHERE api_key = ?", result.key);
 			} else {
-				sql.exec(
-					"UPDATE api_keys SET key_group = 'abnormal', failed_count = failed_count + 1, last_checked_at = ? WHERE api_key = ?",
-					Date.now(), result.key
-				);
+				sql.exec("UPDATE api_keys SET key_group = 'abnormal' WHERE api_key = ?", result.key);
 			}
 		}
 
@@ -236,16 +230,15 @@ export async function getAllApiKeys(request: Request, sql: DurableObjectStorage[
 		const total = totalArray.length > 0 ? totalArray[0][0] : 0;
 
 		const results = sql
-			.exec(`SELECT api_key, key_group, last_checked_at, failed_count, provider_id, model, health_check_enabled, enabled, in_default_rotation
+			.exec(`SELECT api_key, key_group, provider_id, model, health_check_enabled, enabled, in_default_rotation
 				   FROM api_keys
 				   LIMIT ? OFFSET ?`, pageSize, offset)
 			.raw<any>();
 		const keys = results
 			? Array.from(results).map((row: any) => ({
-					api_key: row[0], key_group: row[1],
-					last_checked_at: row[2], failed_count: row[3], provider_id: row[4],
-					model: row[5] || '', health_check_enabled: row[6] === 1, enabled: row[7] === 1,
-					in_default_rotation: row[8] === 1,
+					api_key: row[0], key_group: row[1], provider_id: row[2],
+					model: row[3] || '', health_check_enabled: row[4] === 1, enabled: row[5] === 1,
+					in_default_rotation: row[6] === 1,
 			  }))
 			: [];
 

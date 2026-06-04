@@ -132,6 +132,16 @@ export class AnthropicProtocolAdapter implements ProtocolAdapter {
 					controller.enqueue(encoder.encode(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`));
 				};
 
+				const closeBlock = () => {
+					if (hasThinking || hasText || hasToolUse) {
+						send('content_block_stop', { type: 'content_block_stop', index: contentIndex });
+						contentIndex++;
+						hasThinking = false;
+						hasText = false;
+						hasToolUse = false;
+					}
+				};
+
 				send('message_start', {
 					type: 'message_start',
 					message: {
@@ -162,11 +172,7 @@ export class AnthropicProtocolAdapter implements ProtocolAdapter {
 								delta: { type: 'thinking_delta', thinking: event.text },
 							});
 						} else if (event.type === 'text_delta') {
-							if (hasThinking) {
-								send('content_block_stop', { type: 'content_block_stop', index: contentIndex });
-								contentIndex++;
-								hasThinking = false;
-							}
+							if (hasThinking) closeBlock();
 							if (!hasText) {
 								hasText = true;
 								send('content_block_start', {
@@ -181,15 +187,7 @@ export class AnthropicProtocolAdapter implements ProtocolAdapter {
 								delta: { type: 'text_delta', text: event.text },
 							});
 						} else if (event.type === 'tool_call_delta') {
-							if (hasThinking) {
-								send('content_block_stop', { type: 'content_block_stop', index: contentIndex });
-								contentIndex++;
-								hasThinking = false;
-							} else if (hasText) {
-								send('content_block_stop', { type: 'content_block_stop', index: contentIndex });
-								contentIndex++;
-								hasText = false;
-							}
+							closeBlock();
 							if (event.name) {
 								hasToolUse = true;
 								send('content_block_start', {
@@ -207,15 +205,7 @@ export class AnthropicProtocolAdapter implements ProtocolAdapter {
 							}
 						} else if (event.type === 'done') {
 							doneSent = true;
-							if (hasThinking) {
-								send('content_block_stop', { type: 'content_block_stop', index: contentIndex });
-								contentIndex++;
-								hasThinking = false;
-							} else if (hasText || hasToolUse) {
-								send('content_block_stop', { type: 'content_block_stop', index: contentIndex });
-								hasText = false;
-								hasToolUse = false;
-							}
+							closeBlock();
 
 							send('message_delta', {
 								type: 'message_delta',
@@ -241,12 +231,7 @@ export class AnthropicProtocolAdapter implements ProtocolAdapter {
 				}
 
 				if (!doneSent) {
-					if (hasThinking) {
-						send('content_block_stop', { type: 'content_block_stop', index: contentIndex });
-						contentIndex++;
-					} else if (hasText || hasToolUse) {
-						send('content_block_stop', { type: 'content_block_stop', index: contentIndex });
-					}
+					closeBlock();
 					send('message_delta', {
 						type: 'message_delta',
 						delta: { stop_reason: 'end_turn', stop_sequence: null },
