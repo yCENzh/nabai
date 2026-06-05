@@ -88,6 +88,8 @@ export class OpenAICompatProvider implements Provider {
 		if (req.temperature != null) body.temperature = req.temperature;
 		if (req.top_p != null) body.top_p = req.top_p;
 		if (req.max_tokens != null) body.max_tokens = req.max_tokens;
+		const meta = req.metadata as any;
+		if (meta?.stream_options) body.stream_options = meta.stream_options;
 
 		const response = await fetch(url, {
 			method: 'POST',
@@ -107,7 +109,6 @@ function parseOpenAiChunk(parsed: any): { events: CanonicalStreamEvent[]; finish
 
 	if (parsed.usage) {
 		usage = { input_tokens: parsed.usage.prompt_tokens, output_tokens: parsed.usage.completion_tokens };
-		console.log('[openai-compat] usage:', JSON.stringify(parsed.usage));
 	}
 
 	const choice = parsed.choices?.[0];

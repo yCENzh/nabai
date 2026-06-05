@@ -40,6 +40,9 @@ export function parseStreamFlush(this: any, controller: any) {
 }
 
 export function toOpenAiStream(this: any, line: any, controller: any) {
+	if (line.usageMetadata) {
+		this.shared.usage = { input_tokens: line.usageMetadata.promptTokenCount, output_tokens: line.usageMetadata.candidatesTokenCount };
+	}
 	const { candidates } = line;
 	if (candidates) {
 		for (const cand of candidates) {
@@ -124,5 +127,9 @@ export function toOpenAiStream(this: any, line: any, controller: any) {
 }
 
 export function toOpenAiStreamFlush(this: any, controller: any) {
+	if (this.shared?.usage) {
+		const u = this.shared.usage;
+		controller.enqueue(`data: ${JSON.stringify({ id: this.id, object: 'chat.completion.chunk', created: Math.floor(Date.now() / 1000), model: this.model, choices: [], usage: { prompt_tokens: u.input_tokens ?? 0, completion_tokens: u.output_tokens ?? 0, total_tokens: (u.input_tokens ?? 0) + (u.output_tokens ?? 0) } })}\n\n`);
+	}
 	controller.enqueue('data: [DONE]\n\n');
 }

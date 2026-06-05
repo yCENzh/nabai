@@ -91,7 +91,7 @@ export class LoadBalancer extends DurableObject {
 		}
 
 		// Anthropic compatible route
-		if (pathname.endsWith('/v1/messages') || pathname === '/v1/messages') {
+		if (pathname.endsWith('/v1/messages')) {
 			return handleAnthropicMessages(request, this.env, this.ctx.storage.sql, endpointId);
 		}
 
