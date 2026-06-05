@@ -89,7 +89,11 @@ export class OpenAICompatProvider implements Provider {
 		if (req.top_p != null) body.top_p = req.top_p;
 		if (req.max_tokens != null) body.max_tokens = req.max_tokens;
 		const meta = req.metadata as any;
-		if (meta?.stream_options) body.stream_options = meta.stream_options;
+		if (meta?.stream_options) {
+			body.stream_options = meta.stream_options;
+		} else if (body.stream) {
+			body.stream_options = { include_usage: true };
+		}
 
 		const response = await fetch(url, {
 			method: 'POST',
