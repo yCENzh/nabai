@@ -209,7 +209,7 @@ async function* anthropicStreamToCanonical(response: Response): AsyncIterable<Ca
 			try {
 				const result = parseSseEvents(JSON.parse(data));
 				if (result.stopReason) stopReason = result.stopReason;
-				if (result.usage) usage = result.usage;
+				if (result.usage) usage = { ...usage, ...result.usage };
 				yield* result.events;
 				if (result.isError) return;
 			} catch {}
@@ -225,7 +225,7 @@ async function* anthropicStreamToCanonical(response: Response): AsyncIterable<Ca
 			try {
 				const result = parseSseEvents(JSON.parse(data));
 				if (result.stopReason) stopReason = result.stopReason;
-				if (result.usage) usage = result.usage;
+				if (result.usage) usage = { ...usage, ...result.usage };
 				yield* result.events;
 			} catch {}
 		}
