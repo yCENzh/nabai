@@ -25,14 +25,13 @@ export async function handleAnthropicMessages(
 	}
 
 	let provider, forwardClientKey, endpoint, resolvedApiKey;
-	let modelForRouting: string | undefined;
+	let parsedBody: any;
 	try {
 		const cloned = request.clone();
-		const body: any = await cloned.json();
-		modelForRouting = body.model;
+		parsedBody = await cloned.json();
 	} catch {}
 	try {
-		({ provider, forwardClientKey, endpoint, apiKey: resolvedApiKey } = await resolveProvider(sql, endpointId, modelForRouting));
+		({ provider, forwardClientKey, endpoint, apiKey: resolvedApiKey } = await resolveProvider(sql, endpointId, parsedBody?.model));
 	} catch (err: any) {
 		return anthropicAdapter.renderError(err, { requestId });
 	}
@@ -59,7 +58,10 @@ export async function handleAnthropicMessages(
 	}
 
 	try {
-		const canonical = await anthropicAdapter.parseRequest(request, { requestId });
+		const reqForParse = parsedBody
+			? new Request(request.url, { method: request.method, headers: request.headers, body: JSON.stringify(parsedBody) })
+			: request;
+		const canonical = await anthropicAdapter.parseRequest(reqForParse, { requestId });
 		const isStream = canonical.stream ?? false;
 		console.log('[anthropic] stream:', isStream, 'tools:', canonical.tools?.length ?? 0);
 

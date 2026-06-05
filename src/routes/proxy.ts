@@ -174,9 +174,12 @@ async function handleEmbeddings(req: any, apiKey: string) {
 	return new Response(responseBody, fixCors(response));
 }
 
-async function handleCompletions(request: Request, apiKey: string, provider: Provider) {
+async function handleCompletions(request: Request, apiKey: string, provider: Provider, parsedBody?: any) {
 	const requestId = 'chatcmpl-' + generateId();
-	const canonical = await adapter.parseRequest(request, { requestId });
+	const reqForParse = parsedBody
+		? new Request(request.url, { method: request.method, headers: request.headers, body: JSON.stringify(parsedBody) })
+		: request;
+	const canonical = await adapter.parseRequest(reqForParse, { requestId });
 	const isStream = canonical.stream ?? false;
 	console.log('[openai] stream:', isStream, 'tools:', canonical.tools?.length ?? 0);
 
@@ -269,14 +272,13 @@ export async function handleOpenAI(
 	}
 
 	let provider, forwardClientKey, endpoint, resolvedApiKey;
-	let modelForRouting: string | undefined;
+	let parsedBody: any;
 	try {
 		const cloned = request.clone();
-		const body: any = await cloned.json();
-		modelForRouting = body.model;
+		parsedBody = await cloned.json();
 	} catch {}
 	try {
-		({ provider, forwardClientKey, endpoint, apiKey: resolvedApiKey } = await resolveProvider(sql, endpointId, modelForRouting));
+		({ provider, forwardClientKey, endpoint, apiKey: resolvedApiKey } = await resolveProvider(sql, endpointId, parsedBody?.model));
 	} catch (err: any) {
 		return new Response(err.message, { status: err.status || 503 });
 	}
@@ -313,7 +315,7 @@ export async function handleOpenAI(
 	switch (true) {
 		case pathname.endsWith('/chat/completions'):
 			assert(request.method === 'POST');
-			return handleCompletions(request, apiKey, provider).catch(errHandler);
+			return handleCompletions(request, apiKey, provider, parsedBody).catch(errHandler);
 		case pathname.endsWith('/embeddings'):
 			assert(request.method === 'POST');
 			return handleEmbeddings(await request.json(), apiKey).catch(errHandler);
