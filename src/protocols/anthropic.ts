@@ -207,6 +207,7 @@ export class AnthropicProtocolAdapter implements ProtocolAdapter {
 						} else if (event.type === 'done') {
 							doneSent = true;
 							if (event.usage) upstreamUsage = event.usage;
+							console.log('[anthropic-render] usage:', JSON.stringify(upstreamUsage));
 							closeBlock();
 
 							send('message_delta', {

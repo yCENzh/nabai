@@ -107,6 +107,7 @@ function parseOpenAiChunk(parsed: any): { events: CanonicalStreamEvent[]; finish
 
 	if (parsed.usage) {
 		usage = { input_tokens: parsed.usage.prompt_tokens, output_tokens: parsed.usage.completion_tokens };
+		console.log('[openai-compat] usage:', JSON.stringify(parsed.usage));
 	}
 
 	const choice = parsed.choices?.[0];
