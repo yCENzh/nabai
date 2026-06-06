@@ -164,11 +164,11 @@ async function handleEmbeddings(req: any, apiKey: string) {
 	return new Response(responseBody, fixCors(response));
 }
 
-async function handleCompletions(request: Request, apiKey: string, provider: Provider) {
+async function handleCompletions(request: Request, apiKey: string, provider: Provider, providerName: string) {
 	const requestId = 'chatcmpl-' + generateId();
 	const canonical = await adapter.parseRequest(request, { requestId });
 	const isStream = canonical.stream ?? false;
-	console.log(`[proxy] stream=${isStream} tools=${canonical.tools?.length ?? 0} provider=${provider.type} model=${canonical.model}`);
+	console.log(`[proxy] stream=${isStream} tools=${canonical.tools?.length ?? 0} provider=${providerName}(${provider.type}) model=${canonical.model}`);
 
 	if (!isStream) {
 		try {
@@ -257,14 +257,14 @@ export async function handleOpenAI(
 		return new Response('No API key found in the client headers, please check your request!', { status: 400 });
 	}
 
-	let provider, forwardClientKey, endpoint, resolvedApiKey;
+	let provider, providerName, forwardClientKey, endpoint, resolvedApiKey;
 	let parsedBody: any;
 	try {
 		const cloned = request.clone();
 		parsedBody = await cloned.json();
 	} catch {}
 	try {
-		({ provider, forwardClientKey, endpoint, apiKey: resolvedApiKey } = await resolveProvider(sql, endpointId, parsedBody?.model));
+		({ provider, providerName, forwardClientKey, endpoint, apiKey: resolvedApiKey } = await resolveProvider(sql, endpointId, parsedBody?.model));
 	} catch (err: any) {
 		return new Response(err.message, { status: err.status || 503 });
 	}
@@ -301,7 +301,7 @@ export async function handleOpenAI(
 	switch (true) {
 		case pathname.endsWith('/chat/completions'):
 			assert(request.method === 'POST');
-			return handleCompletions(request, apiKey, provider).catch(errHandler);
+			return handleCompletions(request, apiKey, provider, providerName).catch(errHandler);
 		case pathname.endsWith('/embeddings'):
 			assert(request.method === 'POST');
 			return handleEmbeddings(await request.json(), apiKey).catch(errHandler);

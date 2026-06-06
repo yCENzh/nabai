@@ -34,7 +34,8 @@ async function checkKey(
 	apiKey: string,
 	providerType: string,
 	baseUrl: string,
-	models: string
+	models: string,
+	providerName?: string
 ): Promise<boolean> {
 	try {
 		const cleanUrl = baseUrl.replace(/\/+$/, '');
@@ -63,7 +64,7 @@ async function checkKey(
 		}
 
 		if (!resp.ok) {
-			console.log(`[health] FAIL key=${maskKey(apiKey)} model=${model} status=${resp.status}`);
+			console.log(`[health] FAIL key=${maskKey(apiKey)} provider=${providerName || ''}(${providerType}) model=${model} status=${resp.status}`);
 		}
 		return resp.ok;
 	} catch (e) {
@@ -74,7 +75,7 @@ async function checkKey(
 
 export async function runHealthCheck(sql: DurableObjectStorage['sql']) {
 	const rows = Array.from(sql.exec(`
-		SELECT k.api_key, p.type, p.base_url, k.model
+		SELECT k.api_key, p.type, p.name, p.base_url, k.model
 		FROM api_keys k
 		JOIN providers p ON p.id = k.provider_id
 		WHERE k.key_group = 'abnormal' AND k.health_check_enabled = 1 AND k.enabled = 1 AND p.enabled = 1
@@ -82,9 +83,13 @@ export async function runHealthCheck(sql: DurableObjectStorage['sql']) {
 
 	for (const row of rows) {
 		const apiKey = row[0] as string;
-		const ok = await checkKey(apiKey, row[1] as string, row[2] as string, row[3] as string);
+		const providerType = row[1] as string;
+		const providerName = row[2] as string;
+		const baseUrl = row[3] as string;
+		const model = row[4] as string;
+		const ok = await checkKey(apiKey, providerType, baseUrl, model, providerName);
 		if (ok) {
-			console.log(`[health] RECOVERED key=${maskKey(apiKey)}`);
+			console.log(`[health] RECOVERED key=${maskKey(apiKey)} provider=${providerName}(${providerType})`);
 			await sql.exec("UPDATE api_keys SET key_group = 'normal' WHERE api_key = ?", apiKey);
 		}
 	}

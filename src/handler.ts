@@ -24,12 +24,12 @@ export class LoadBalancer extends DurableObject {
 
 		this.config.initSchema();
 
-		this.ctx.storage.setAlarm(Date.now() + 5 * 60 * 1000);
+		this.ctx.storage.setAlarm(Date.now() + 2 * 60 * 60 * 1000);
 	}
 
 	async alarm() {
 		await runHealthCheck(this.ctx.storage.sql);
-		this.ctx.storage.setAlarm(Date.now() + 5 * 60 * 1000);
+		this.ctx.storage.setAlarm(Date.now() + 2 * 60 * 60 * 1000);
 	}
 
 	async fetch(request: Request): Promise<Response> {

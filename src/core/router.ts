@@ -68,6 +68,7 @@ export async function getProviderConfig(
 
 export interface ResolvedProvider {
 	provider: Provider;
+	providerName: string;
 	forwardClientKey: boolean;
 	endpoint: EndpointConfig | null;
 	apiKey?: string;
@@ -100,8 +101,8 @@ async function resolveDefaultEndpoint(sql: DurableObjectStorage['sql'], model: s
 		id: row[1] as string, type: row[2] as string, name: row[3] as string,
 		base_url: row[4] as string, enabled: row[5] === 1, config_json: row[6] as string,
 	};
-	console.log(`[rot] key=${maskKey(apiKey)} provider=${provConfig.id}(${provConfig.type})`);
-	return { provider: buildProvider(provConfig), forwardClientKey: false, endpoint: null, apiKey };
+	console.log(`[rot] key=${maskKey(apiKey)} provider=${provConfig.name}(${provConfig.type})`);
+	return { provider: buildProvider(provConfig), providerName: provConfig.name, forwardClientKey: false, endpoint: null, apiKey };
 }
 
 /** Resolve endpoint → provider config → Provider instance. Throws HttpError on failure. */
@@ -115,7 +116,7 @@ export async function resolveProvider(sql: DurableObjectStorage['sql'], endpoint
 			}
 			let forwardClientKey = false;
 			try { forwardClientKey = JSON.parse(provConfig.config_json).forward_client_key === true; } catch {}
-			return { provider: buildProvider(provConfig), forwardClientKey, endpoint };
+			return { provider: buildProvider(provConfig), providerName: provConfig.name, forwardClientKey, endpoint };
 		}
 		if (!model) throw new HttpError('Model is required for default endpoint rotation.', 400);
 		return resolveDefaultEndpoint(sql, model);
@@ -137,5 +138,5 @@ export async function resolveProvider(sql: DurableObjectStorage['sql'], endpoint
 		forwardClientKey = cfg.forward_client_key === true;
 	} catch {}
 
-	return { provider: buildProvider(provConfig), forwardClientKey, endpoint };
+	return { provider: buildProvider(provConfig), providerName: provConfig.name, forwardClientKey, endpoint };
 }
