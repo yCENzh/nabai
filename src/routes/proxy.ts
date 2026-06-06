@@ -178,6 +178,7 @@ async function handleCompletions(request: Request, apiKey: string, provider: Pro
 	const requestId = 'chatcmpl-' + generateId();
 	const canonical = await adapter.parseRequest(request, { requestId });
 	const isStream = canonical.stream ?? false;
+	console.log(`[openai] ${isStream ? 'stream' : 'sync'} tools=${canonical.tools?.length ?? 0} provider=${provider.type}`);
 
 	if (!isStream) {
 		try {

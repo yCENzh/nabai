@@ -100,6 +100,7 @@ async function resolveDefaultEndpoint(sql: DurableObjectStorage['sql'], model: s
 		id: row[1] as string, type: row[2] as string, name: row[3] as string,
 		base_url: row[4] as string, enabled: row[5] === 1, config_json: row[6] as string,
 	};
+	console.log(`[rot] model=${model} provider=${provConfig.id}(${provConfig.type})`);
 	return { provider: buildProvider(provConfig), forwardClientKey: false, endpoint: null, apiKey };
 }
 
