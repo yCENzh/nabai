@@ -566,7 +566,7 @@ document.addEventListener('DOMContentLoaded', () => {
 		modelHidden.dispatchEvent(new Event('input'));
 	}
 	function addModelTag(value) {
-		value = value.trim().replace(/[,，;；|、\s]+/g, '');
+		value = value.trim();
 		if (!value) return;
 		const existing = Array.from(modelTags.querySelectorAll('.tag')).map(t => t.dataset.value);
 		if (existing.includes(value)) return;
