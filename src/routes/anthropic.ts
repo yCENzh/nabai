@@ -25,8 +25,13 @@ export async function handleAnthropicMessages(
 	}
 
 	let provider, forwardClientKey, endpoint, resolvedApiKey;
+	let parsedBody: any;
 	try {
-		({ provider, forwardClientKey, endpoint, apiKey: resolvedApiKey } = await resolveProvider(sql, endpointId));
+		const cloned = request.clone();
+		parsedBody = await cloned.json();
+	} catch {}
+	try {
+		({ provider, forwardClientKey, endpoint, apiKey: resolvedApiKey } = await resolveProvider(sql, endpointId, parsedBody?.model));
 	} catch (err: any) {
 		return anthropicAdapter.renderError(err, { requestId });
 	}
