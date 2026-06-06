@@ -95,6 +95,7 @@ export class OpenAICompatProvider implements Provider {
 			body.stream_options = { include_usage: true };
 		}
 
+		console.log('[openai-compat] tools:', body.tools?.length ?? 0, 'tool_choice:', body.tool_choice ?? 'none');
 		const response = await fetch(url, {
 			method: 'POST',
 			headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${ctx.apiKey}` },
