@@ -123,22 +123,12 @@ async function handleModels(apiKey: string) {
 }
 
 async function handleEmbeddings(req: any, apiKey: string) {
-	const DEFAULT_EMBEDDINGS_MODEL = 'text-embedding-004';
-
 	if (typeof req.model !== 'string') {
 		throw new HttpError('model is not specified', 400);
 	}
 
-	let model;
-	let modelName = req.model;
-	if (modelName.startsWith('models/')) {
-		model = modelName;
-	} else {
-		if (!modelName.startsWith('gemini-')) {
-			modelName = DEFAULT_EMBEDDINGS_MODEL;
-		}
-		model = 'models/' + modelName;
-	}
+	const modelName = req.model.startsWith('models/') ? req.model.substring(7) : req.model;
+	const model = 'models/' + modelName;
 
 	const inputs = Array.isArray(req.input) ? req.input : [req.input];
 

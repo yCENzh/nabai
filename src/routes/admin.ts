@@ -64,6 +64,10 @@ export async function handleApiKeys(request: Request, sql: DurableObjectStorage[
 		if (!model) {
 			return jsonResponse({ error: 'model 是必填项' }, 400);
 		}
+		const normalizedModel = model.replace(/[,，;；|、\s]+/g, ',').replace(/^,|,$/g, '');
+		if (!normalizedModel) {
+			return jsonResponse({ error: 'model 是必填项' }, 400);
+		}
 		const hce = health_check_enabled !== false ? 1 : 0;
 		const rotation = in_default_rotation ? 1 : 0;
 		let added = 0;
@@ -72,7 +76,7 @@ export async function handleApiKeys(request: Request, sql: DurableObjectStorage[
 			const existing = Array.from(sql.exec('SELECT 1 FROM api_keys WHERE api_key = ?', key).raw<any>());
 			if (existing.length > 0) { skipped++; continue; }
 			const keyId = crypto.randomUUID();
-			sql.exec('INSERT INTO api_keys (id, provider_id, model, api_key, health_check_enabled, in_default_rotation) VALUES (?, ?, ?, ?, ?, ?)', keyId, provider_id, model, key, hce, rotation);
+			sql.exec('INSERT INTO api_keys (id, provider_id, model, api_key, health_check_enabled, in_default_rotation) VALUES (?, ?, ?, ?, ?, ?)', keyId, provider_id, normalizedModel, key, hce, rotation);
 			added++;
 		}
 
@@ -94,10 +98,12 @@ export async function handleUpdateApiKey(request: Request, sql: DurableObjectSto
 		if (!api_key) return jsonResponse({ error: 'api_key 是必填项' }, 400);
 		if (!provider_id) return jsonResponse({ error: 'provider_id 是必填项' }, 400);
 		if (!model) return jsonResponse({ error: 'model 是必填项' }, 400);
+		const normalizedModel = model.replace(/[,，;；|、\s]+/g, ',').replace(/^,|,$/g, '');
+		if (!normalizedModel) return jsonResponse({ error: 'model 是必填项' }, 400);
 
 		sql.exec(
 			'UPDATE api_keys SET provider_id = ?, model = ?, health_check_enabled = ?, in_default_rotation = ? WHERE api_key = ?',
-			provider_id, model, health_check_enabled !== false ? 1 : 0, in_default_rotation ? 1 : 0, api_key
+			provider_id, normalizedModel, health_check_enabled !== false ? 1 : 0, in_default_rotation ? 1 : 0, api_key
 		);
 		return jsonResponse({ message: '密钥更新成功。' });
 	} catch (error: any) {
@@ -171,12 +177,11 @@ export async function handleApiKeysCheck(request: Request, sql: DurableObjectSto
 					const provider = providerMap.get(key);
 					const providerType = provider?.type || 'gemini';
 					const baseUrl = (provider?.baseUrl || BASE_URL).replace(/\/+$/, '');
-					const model = provider?.model || '';
+					const model = (provider?.model || '').split(',')[0]?.trim() || '';
 
 					let response: Response;
 					if (providerType === 'gemini') {
-						const m = model || 'gemini-2.5-flash';
-						response = await fetch(`${baseUrl}/v1beta/models/${m}:generateContent?key=${key}`, {
+						response = await fetch(`${baseUrl}/v1beta/models/${model}:generateContent?key=${key}`, {
 							method: 'POST',
 							headers: { 'Content-Type': 'application/json' },
 							body: JSON.stringify({ contents: [{ parts: [{ text: 'hi' }] }] }),

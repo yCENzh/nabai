@@ -34,14 +34,14 @@ async function checkKey(
 	apiKey: string,
 	providerType: string,
 	baseUrl: string,
-	model: string
+	models: string
 ): Promise<boolean> {
 	try {
 		const cleanUrl = baseUrl.replace(/\/+$/, '');
+		const model = models.split(',')[0]?.trim() || '';
 
 		if (providerType === 'gemini') {
-			const m = model || 'gemini-2.5-flash';
-			const resp = await fetch(`${cleanUrl}/v1beta/models/${m}:generateContent?key=${apiKey}`, {
+			const resp = await fetch(`${cleanUrl}/v1beta/models/${model}:generateContent?key=${apiKey}`, {
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json' },
 				body: JSON.stringify({ contents: [{ parts: [{ text: 'hi' }] }] }),

@@ -301,14 +301,7 @@ export class GeminiProvider implements Provider {
 			...(req.metadata as any),
 		};
 
-		let model = 'gemini-2.5-flash';
-		if (typeof req.model === 'string') {
-			if (req.model.startsWith('models/')) {
-				model = req.model.substring(7);
-			} else if (req.model.startsWith('gemini-') || req.model.startsWith('gemma-') || req.model.startsWith('learnlm-')) {
-				model = req.model;
-			}
-		}
+		let model = req.model?.startsWith('models/') ? req.model.substring(7) : req.model;
 
 		let body = await transformRequest(rawReq);
 		const extra = (req.metadata as any)?.extra_body?.google;
