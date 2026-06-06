@@ -143,7 +143,6 @@ export class AnthropicProvider implements Provider {
 			else if (req.tool_choice === 'none') body.tool_choice = { type: 'none' };
 			else if (typeof req.tool_choice === 'object') body.tool_choice = { type: 'tool', name: req.tool_choice.name };
 		}
-		console.log('[anthropic-provider] tools:', body.tools?.length ?? 0, 'tool_choice:', JSON.stringify(body.tool_choice ?? 'none'));
 
 		const response = await fetch(`${this.baseUrl}/v1/messages`, {
 			method: 'POST',

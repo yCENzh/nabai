@@ -12,9 +12,7 @@ export async function getRandomApiKey(sql: DurableObjectStorage['sql'], provider
 			.raw<any>();
 		let keys = Array.from(results);
 		if (keys && keys.length > 0) {
-			const key = keys[0][0] as string;
-			console.log(`Selected API Key from normal group: ${maskKey(key)}`);
-			return key;
+			return keys[0][0] as string;
 		}
 
 		results = sql
@@ -22,14 +20,9 @@ export async function getRandomApiKey(sql: DurableObjectStorage['sql'], provider
 			.raw<any>();
 		keys = Array.from(results);
 		if (keys && keys.length > 0) {
-			const key = keys[0][0] as string;
-			console.log(`Selected API Key from abnormal group: ${maskKey(key)}`);
-			return key;
+			return keys[0][0] as string;
 		}
 
-		if (providerId) {
-			console.log(`No keys found for provider ${providerId}`);
-		}
 		return null;
 	} catch (error) {
 		console.error('Failed to get random API key:', error);

@@ -127,6 +127,7 @@ export class AnthropicProtocolAdapter implements ProtocolAdapter {
 		let hasText = false;
 		let hasToolUse = false;
 		let doneSent = false;
+		let upstreamUsage: { input_tokens?: number; output_tokens?: number } | undefined;
 
 		const stream = new ReadableStream({
 			async start(controller) {
@@ -184,7 +185,6 @@ export class AnthropicProtocolAdapter implements ProtocolAdapter {
 								delta: { type: 'text_delta', text: event.text },
 							});
 						} else if (event.type === 'tool_call_delta') {
-							// Close any open text/thinking block
 							if (hasThinking) {
 								send('content_block_stop', { type: 'content_block_stop', index: contentIndex });
 								contentIndex++;
@@ -195,9 +195,7 @@ export class AnthropicProtocolAdapter implements ProtocolAdapter {
 								hasText = false;
 							}
 							if (event.name) {
-								// New tool call — start a tool_use content block
 								hasToolUse = true;
-								console.log('[anthropic-render] tool_use start:', event.name, 'id:', event.id);
 								send('content_block_start', {
 									type: 'content_block_start',
 									index: contentIndex,
@@ -213,7 +211,7 @@ export class AnthropicProtocolAdapter implements ProtocolAdapter {
 							}
 						} else if (event.type === 'done') {
 							doneSent = true;
-							console.log('[anthropic-render] done, finishReason:', event.finishReason, '→ stop_reason:', mapFinishReason(event.finishReason));
+							if (event.usage) upstreamUsage = event.usage;
 							if (hasThinking) {
 								send('content_block_stop', { type: 'content_block_stop', index: contentIndex });
 								contentIndex++;
@@ -230,7 +228,10 @@ export class AnthropicProtocolAdapter implements ProtocolAdapter {
 									stop_reason: mapFinishReason(event.finishReason),
 									stop_sequence: null,
 								},
-								usage: { output_tokens: 0 },
+								usage: {
+									output_tokens: upstreamUsage?.output_tokens ?? 0,
+									...(upstreamUsage?.input_tokens != null ? { input_tokens: upstreamUsage.input_tokens } : {}),
+								},
 							});
 							send('message_stop', { type: 'message_stop' });
 						} else if (event.type === 'error') {
