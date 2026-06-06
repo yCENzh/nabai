@@ -49,6 +49,7 @@ export class AnthropicProtocolAdapter implements ProtocolAdapter {
 			});
 		}
 
+		// Convert Anthropic tools to canonical format
 		const tools = body.tools?.map((t: any) => ({
 			type: 'function' as const,
 			function: {
@@ -58,6 +59,7 @@ export class AnthropicProtocolAdapter implements ProtocolAdapter {
 			},
 		}));
 
+		// Convert Anthropic tool_choice to canonical (OpenAI) format
 		let tool_choice: CanonicalRequest['tool_choice'];
 		if (body.tool_choice) {
 			if (body.tool_choice.type === 'auto') tool_choice = 'auto';
@@ -125,7 +127,6 @@ export class AnthropicProtocolAdapter implements ProtocolAdapter {
 		let hasText = false;
 		let hasToolUse = false;
 		let doneSent = false;
-		let upstreamUsage: { input_tokens?: number; output_tokens?: number } | undefined;
 
 		const stream = new ReadableStream({
 			async start(controller) {
@@ -133,16 +134,7 @@ export class AnthropicProtocolAdapter implements ProtocolAdapter {
 					controller.enqueue(encoder.encode(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`));
 				};
 
-				const closeBlock = () => {
-					if (hasThinking || hasText || hasToolUse) {
-						send('content_block_stop', { type: 'content_block_stop', index: contentIndex });
-						contentIndex++;
-						hasThinking = false;
-						hasText = false;
-						hasToolUse = false;
-					}
-				};
-
+				// message_start
 				send('message_start', {
 					type: 'message_start',
 					message: {
@@ -173,7 +165,11 @@ export class AnthropicProtocolAdapter implements ProtocolAdapter {
 								delta: { type: 'thinking_delta', thinking: event.text },
 							});
 						} else if (event.type === 'text_delta') {
-							if (hasThinking) closeBlock();
+							if (hasThinking) {
+								send('content_block_stop', { type: 'content_block_stop', index: contentIndex });
+								contentIndex++;
+								hasThinking = false;
+							}
 							if (!hasText) {
 								hasText = true;
 								send('content_block_start', {
@@ -188,9 +184,20 @@ export class AnthropicProtocolAdapter implements ProtocolAdapter {
 								delta: { type: 'text_delta', text: event.text },
 							});
 						} else if (event.type === 'tool_call_delta') {
-							closeBlock();
+							// Close any open text/thinking block
+							if (hasThinking) {
+								send('content_block_stop', { type: 'content_block_stop', index: contentIndex });
+								contentIndex++;
+								hasThinking = false;
+							} else if (hasText) {
+								send('content_block_stop', { type: 'content_block_stop', index: contentIndex });
+								contentIndex++;
+								hasText = false;
+							}
 							if (event.name) {
+								// New tool call — start a tool_use content block
 								hasToolUse = true;
+								console.log('[anthropic-render] tool_use start:', event.name, 'id:', event.id);
 								send('content_block_start', {
 									type: 'content_block_start',
 									index: contentIndex,
@@ -206,8 +213,16 @@ export class AnthropicProtocolAdapter implements ProtocolAdapter {
 							}
 						} else if (event.type === 'done') {
 							doneSent = true;
-							if (event.usage) upstreamUsage = event.usage;
-							closeBlock();
+							console.log('[anthropic-render] done, finishReason:', event.finishReason, '→ stop_reason:', mapFinishReason(event.finishReason));
+							if (hasThinking) {
+								send('content_block_stop', { type: 'content_block_stop', index: contentIndex });
+								contentIndex++;
+								hasThinking = false;
+							} else if (hasText || hasToolUse) {
+								send('content_block_stop', { type: 'content_block_stop', index: contentIndex });
+								hasText = false;
+								hasToolUse = false;
+							}
 
 							send('message_delta', {
 								type: 'message_delta',
@@ -215,10 +230,7 @@ export class AnthropicProtocolAdapter implements ProtocolAdapter {
 									stop_reason: mapFinishReason(event.finishReason),
 									stop_sequence: null,
 								},
-								usage: {
-									output_tokens: upstreamUsage?.output_tokens ?? 0,
-									...(upstreamUsage?.input_tokens != null ? { input_tokens: upstreamUsage.input_tokens } : {}),
-								},
+								usage: { output_tokens: 0 },
 							});
 							send('message_stop', { type: 'message_stop' });
 						} else if (event.type === 'error') {
@@ -235,8 +247,14 @@ export class AnthropicProtocolAdapter implements ProtocolAdapter {
 					});
 				}
 
+				// Upstream closed without sending done — emit terminal events so client doesn't hang
 				if (!doneSent) {
-					closeBlock();
+					if (hasThinking) {
+						send('content_block_stop', { type: 'content_block_stop', index: contentIndex });
+						contentIndex++;
+					} else if (hasText || hasToolUse) {
+						send('content_block_stop', { type: 'content_block_stop', index: contentIndex });
+					}
 					send('message_delta', {
 						type: 'message_delta',
 						delta: { stop_reason: 'end_turn', stop_sequence: null },
