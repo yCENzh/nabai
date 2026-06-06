@@ -4,6 +4,7 @@ export interface ProviderContext {
 	apiKey: string;
 	baseUrl?: string;
 	signal?: AbortSignal;
+	requestHeaders?: Headers;
 }
 
 export interface Provider {

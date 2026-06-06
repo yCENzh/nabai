@@ -65,13 +65,15 @@ export async function handleAnthropicMessages(
 		const isStream = canonical.stream ?? false;
 		console.log('[anthropic] stream:', isStream, 'tools:', canonical.tools?.length ?? 0);
 
+		const providerCtx = { apiKey, requestHeaders: request.headers };
+
 		if (!isStream) {
-			const { response: upstreamResp } = await provider.invoke(canonical, { apiKey });
+			const { response: upstreamResp } = await provider.invoke(canonical, providerCtx);
 			if (!upstreamResp.ok) {
 				const errText = await upstreamResp.text();
-				console.error('Upstream error:', errText);
+				console.error('[anthropic] upstream error:', upstreamResp.status, errText);
 				return anthropicAdapter.renderError(
-					new HttpError(`Upstream error: ${upstreamResp.status}`, upstreamResp.status),
+					new HttpError(`Upstream error ${upstreamResp.status}: ${errText}`, upstreamResp.status),
 					{ requestId }
 				);
 			}
@@ -86,13 +88,13 @@ export async function handleAnthropicMessages(
 			return anthropicAdapter.renderJson(canonicalResp, { requestId });
 		}
 
-		const { response: upstreamResp } = await provider.invoke(canonical, { apiKey });
+		const { response: upstreamResp } = await provider.invoke(canonical, providerCtx);
 		console.log('[anthropic] upstream:', upstreamResp.status);
 		if (!upstreamResp.ok) {
 			const errText = await upstreamResp.text();
-			console.error('[anthropic] error:', errText);
+			console.error('[anthropic] upstream error:', upstreamResp.status, errText);
 			return anthropicAdapter.renderError(
-				new HttpError(`Upstream error: ${upstreamResp.status}`, upstreamResp.status),
+				new HttpError(`Upstream error ${upstreamResp.status}: ${errText}`, upstreamResp.status),
 				{ requestId }
 			);
 		}

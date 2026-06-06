@@ -73,7 +73,19 @@ export class AnthropicProvider implements Provider {
 			}
 
 			if (msg.role === 'tool' && msg.tool_call_id) {
-				const resultContent = typeof msg.content === 'string' ? msg.content : '';
+				let resultContent: string;
+				if (typeof msg.content === 'string') {
+					resultContent = msg.content;
+				} else if (Array.isArray(msg.content)) {
+					resultContent = msg.content
+						.map((b: any) => b.text ?? b.content ?? '')
+						.filter(Boolean)
+						.join('\n');
+				} else if (msg.content != null) {
+					resultContent = JSON.stringify(msg.content);
+				} else {
+					resultContent = '';
+				}
 				messages.push({
 					role: 'user',
 					content: [{ type: 'tool_result', tool_use_id: msg.tool_call_id, content: resultContent }],
@@ -144,12 +156,14 @@ export class AnthropicProvider implements Provider {
 			else if (typeof req.tool_choice === 'object') body.tool_choice = { type: 'tool', name: req.tool_choice.name };
 		}
 
+		const anthropicVersion = ctx.requestHeaders?.get('anthropic-version') || ANTHROPIC_VERSION;
+
 		const response = await fetch(`${this.baseUrl}/v1/messages`, {
 			method: 'POST',
 			headers: {
 				'Content-Type': 'application/json',
 				'x-api-key': ctx.apiKey,
-				'anthropic-version': ANTHROPIC_VERSION,
+				'anthropic-version': anthropicVersion,
 			},
 			body: JSON.stringify(body),
 		});
