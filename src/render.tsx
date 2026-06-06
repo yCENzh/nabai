@@ -566,16 +566,23 @@ document.addEventListener('DOMContentLoaded', () => {
 		modelHidden.dispatchEvent(new Event('input'));
 	}
 	function addModelTag(value) {
-		value = value.trim();
-		if (!value) return;
+		const parts = value.split(/[,，]+/).map(s => s.trim()).filter(Boolean);
 		const existing = Array.from(modelTags.querySelectorAll('.tag')).map(t => t.dataset.value);
-		if (existing.includes(value)) return;
-		const tag = document.createElement('span');
-		tag.className = 'tag';
-		tag.dataset.value = value;
-		tag.innerHTML = E(value) + '<span class="tag-remove">×</span>';
-		tag.querySelector('.tag-remove').addEventListener('click', () => { tag.remove(); syncModelTags(); });
-		modelTags.insertBefore(tag, modelInput);
+		for (const part of parts) {
+			if (existing.includes(part)) continue;
+			const tag = document.createElement('span');
+			tag.className = 'tag';
+			tag.dataset.value = part;
+			tag.innerHTML = E(part) + '<span class="tag-remove">×</span>';
+			tag.querySelector('.tag-remove').addEventListener('click', () => { tag.remove(); syncModelTags(); });
+			tag.addEventListener('dblclick', () => {
+				modelInput.value = tag.dataset.value;
+				tag.remove();
+				syncModelTags();
+				modelInput.focus();
+			});
+			modelTags.insertBefore(tag, modelInput);
+		}
 		modelInput.value = '';
 		syncModelTags();
 	}
