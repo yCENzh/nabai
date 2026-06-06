@@ -177,7 +177,8 @@ export async function handleApiKeysCheck(request: Request, sql: DurableObjectSto
 					const provider = providerMap.get(key);
 					const providerType = provider?.type || 'gemini';
 					const baseUrl = (provider?.baseUrl || BASE_URL).replace(/\/+$/, '');
-					const model = (provider?.model || '').split(',')[0]?.trim() || '';
+					const modelList = (provider?.model || '').split(',').map(m => m.trim()).filter(Boolean);
+					const model = modelList[Math.floor(Math.random() * modelList.length)] || '';
 
 					let response: Response;
 					if (providerType === 'gemini') {

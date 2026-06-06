@@ -38,32 +38,33 @@ async function checkKey(
 ): Promise<boolean> {
 	try {
 		const cleanUrl = baseUrl.replace(/\/+$/, '');
-		const model = models.split(',')[0]?.trim() || '';
+		const modelList = models.split(',').map(m => m.trim()).filter(Boolean);
+		const model = modelList[Math.floor(Math.random() * modelList.length)] || '';
 
+		let resp: Response;
 		if (providerType === 'gemini') {
-			const resp = await fetch(`${cleanUrl}/v1beta/models/${model}:generateContent?key=${apiKey}`, {
+			resp = await fetch(`${cleanUrl}/v1beta/models/${model}:generateContent?key=${apiKey}`, {
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json' },
 				body: JSON.stringify({ contents: [{ parts: [{ text: 'hi' }] }] }),
 			});
-			return resp.ok;
-		}
-
-		if (providerType === 'anthropic') {
-			const body = { model, max_tokens: 1, messages: [{ role: 'user', content: 'hi' }] };
-			const resp = await fetch(`${cleanUrl}/v1/messages`, {
+		} else if (providerType === 'anthropic') {
+			resp = await fetch(`${cleanUrl}/v1/messages`, {
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json', 'x-api-key': apiKey, 'anthropic-version': '2023-06-01' },
-				body: JSON.stringify(body),
+				body: JSON.stringify({ model, max_tokens: 1, messages: [{ role: 'user', content: 'hi' }] }),
 			});
-			return resp.ok;
+		} else {
+			resp = await fetch(`${cleanUrl}/chat/completions`, {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },
+				body: JSON.stringify({ model, max_tokens: 1, messages: [{ role: 'user', content: 'hi' }] }),
+			});
 		}
 
-		const resp = await fetch(`${cleanUrl}/chat/completions`, {
-			method: 'POST',
-			headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },
-			body: JSON.stringify({ model, max_tokens: 1, messages: [{ role: 'user', content: 'hi' }] }),
-		});
+		if (!resp.ok) {
+			console.log(`[health] FAIL key=${maskKey(apiKey)} model=${model} status=${resp.status}`);
+		}
 		return resp.ok;
 	} catch (e) {
 		console.error(`Health check error for ${maskKey(apiKey)}:`, e);
@@ -83,11 +84,13 @@ export async function runHealthCheck(sql: DurableObjectStorage['sql']) {
 		const apiKey = row[0] as string;
 		const ok = await checkKey(apiKey, row[1] as string, row[2] as string, row[3] as string);
 		if (ok) {
+			console.log(`[health] RECOVERED key=${maskKey(apiKey)}`);
 			await sql.exec("UPDATE api_keys SET key_group = 'normal' WHERE api_key = ?", apiKey);
 		}
 	}
 }
 
 export async function markKeyAbnormal(sql: DurableObjectStorage['sql'], apiKey: string) {
+	console.log(`[health] MARKED ABNORMAL key=${maskKey(apiKey)}`);
 	await sql.exec("UPDATE api_keys SET key_group = 'abnormal' WHERE api_key = ?", apiKey);
 }
