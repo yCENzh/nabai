@@ -69,12 +69,7 @@ export class OpenAICompatProvider implements Provider {
 				if (otherBlocks.length > 0) messages.push({ role: 'user', content: otherBlocks.length === 1 && otherBlocks[0].type === 'text' ? otherBlocks[0].text : otherBlocks });
 				messages.push(...toolResults);
 			} else {
-				let content = m.content;
-				if (m.role === 'assistant' && Array.isArray(m.content)) {
-					const texts = m.content.filter((b: any) => b.type === 'text').map((b: any) => b.text);
-					if (texts.length > 0) content = texts.join('');
-				}
-				messages.push({ role: m.role, content, ...(m.name ? { name: m.name } : {}), ...(m.tool_call_id ? { tool_call_id: m.tool_call_id } : {}) });
+				messages.push({ role: m.role, content: m.content, ...(m.name ? { name: m.name } : {}), ...(m.tool_call_id ? { tool_call_id: m.tool_call_id } : {}) });
 			}
 		}
 
