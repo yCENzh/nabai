@@ -1,4 +1,4 @@
-import { BASE_URL } from '../core/utils';
+import { BASE_URL, maskKey } from '../core/utils';
 
 // ─── Providers ───
 
@@ -161,14 +161,14 @@ export async function handleApiKeysCheck(request: Request, sql: DurableObjectSto
 
 		// Build a map of api_key → { type, base_url, model } from providers
 		const keyProviderRows = sql.exec(`
-			SELECT k.api_key, p.type, p.base_url, k.model
+			SELECT k.api_key, p.type, p.name, p.base_url, k.model
 			FROM api_keys k
 			JOIN providers p ON p.id = k.provider_id
 			WHERE p.enabled = 1
 		`).raw<any>();
-		const providerMap = new Map<string, { type: string; baseUrl: string; model: string }>();
+		const providerMap = new Map<string, { type: string; name: string; baseUrl: string; model: string }>();
 		for (const row of Array.from(keyProviderRows)) {
-			providerMap.set(row[0] as string, { type: row[1] as string, baseUrl: row[2] as string, model: row[3] as string });
+			providerMap.set(row[0] as string, { type: row[1] as string, name: row[2] as string, baseUrl: row[3] as string, model: row[4] as string });
 		}
 
 		const checkResults = await Promise.all(
@@ -176,6 +176,7 @@ export async function handleApiKeysCheck(request: Request, sql: DurableObjectSto
 				try {
 					const provider = providerMap.get(key);
 					const providerType = provider?.type || 'gemini';
+					const providerName = provider?.name || '';
 					const baseUrl = (provider?.baseUrl || BASE_URL).replace(/\/+$/, '');
 					const modelList = (provider?.model || '').split(',').map(m => m.trim()).filter(Boolean);
 					const model = modelList[Math.floor(Math.random() * modelList.length)] || '';
@@ -201,9 +202,12 @@ export async function handleApiKeysCheck(request: Request, sql: DurableObjectSto
 							body: JSON.stringify({ model, max_tokens: 1, messages: [{ role: 'user', content: 'hi' }] }),
 						});
 					}
-					const valid = response.ok;
-					return { key, valid, error: valid ? null : await response.text() };
+					if (!response.ok) {
+						console.log(`[health] FAIL key=${maskKey(key)} provider=${providerName}(${providerType}) model=${model} status=${response.status}`);
+					}
+					return { key, valid: response.ok, error: response.ok ? null : await response.text() };
 				} catch (e: any) {
+					console.log(`[health] ERROR key=${maskKey(key)} error=${e.message}`);
 					return { key, valid: false, error: e.message };
 				}
 			})
