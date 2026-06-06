@@ -25,13 +25,8 @@ export async function handleAnthropicMessages(
 	}
 
 	let provider, forwardClientKey, endpoint, resolvedApiKey;
-	let parsedBody: any;
 	try {
-		const cloned = request.clone();
-		parsedBody = await cloned.json();
-	} catch {}
-	try {
-		({ provider, forwardClientKey, endpoint, apiKey: resolvedApiKey } = await resolveProvider(sql, endpointId, parsedBody?.model));
+		({ provider, forwardClientKey, endpoint, apiKey: resolvedApiKey } = await resolveProvider(sql, endpointId));
 	} catch (err: any) {
 		return anthropicAdapter.renderError(err, { requestId });
 	}
@@ -58,12 +53,8 @@ export async function handleAnthropicMessages(
 	}
 
 	try {
-		const reqForParse = parsedBody
-			? new Request(request.url, { method: request.method, headers: request.headers, body: JSON.stringify(parsedBody) })
-			: request;
-		const canonical = await anthropicAdapter.parseRequest(reqForParse, { requestId });
+		const canonical = await anthropicAdapter.parseRequest(request, { requestId });
 		const isStream = canonical.stream ?? false;
-		console.log('[anthropic] stream:', isStream, 'tools:', canonical.tools?.length ?? 0);
 
 		if (!isStream) {
 			const { response: upstreamResp } = await provider.invoke(canonical, { apiKey });
@@ -87,7 +78,6 @@ export async function handleAnthropicMessages(
 		}
 
 		const { response: upstreamResp } = await provider.invoke(canonical, { apiKey });
-		console.log('[anthropic] upstream:', upstreamResp.status);
 		if (!upstreamResp.ok) {
 			const errText = await upstreamResp.text();
 			console.error('[anthropic] error:', errText);

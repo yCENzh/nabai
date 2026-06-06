@@ -1,4 +1,4 @@
-import { HttpError, maskKey } from './utils';
+import { HttpError } from './utils';
 import type { Provider } from '../providers/base';
 import { GeminiProvider } from '../providers/gemini';
 import { OpenAICompatProvider } from '../providers/openai-compat';
@@ -100,7 +100,6 @@ async function resolveDefaultEndpoint(sql: DurableObjectStorage['sql'], model: s
 		id: row[1] as string, type: row[2] as string, name: row[3] as string,
 		base_url: row[4] as string, enabled: row[5] === 1, config_json: row[6] as string,
 	};
-	console.log(`[default-rot] selected key ${maskKey(apiKey)} from provider ${provConfig.id}`);
 	return { provider: buildProvider(provConfig), forwardClientKey: false, endpoint: null, apiKey };
 }
 
