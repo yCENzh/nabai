@@ -138,6 +138,12 @@ export const Render = ({ isAuthenticated, showWarning }: { isAuthenticated: bool
 					.hidden { display: none !important; }
 					.eye-btn { background: none; border: none; cursor: pointer; padding: 2px; color: #999; font-size: 14px; vertical-align: middle; margin-left: 4px; }
 					.eye-btn:hover { color: #333; }
+					.tag-input { display: flex; flex-wrap: wrap; gap: 4px; padding: 5px 8px; border: 1px solid #d4d4d4; background: #fff; min-height: 34px; align-items: center; cursor: text; }
+					.tag-input:focus-within { border-color: #3b82f6; }
+					.tag { display: inline-flex; align-items: center; gap: 2px; padding: 2px 6px; background: #f0f0f0; border-radius: 3px; font-size: 12px; }
+					.tag-input .tag-remove { cursor: pointer; color: #999; font-size: 14px; line-height: 1; }
+					.tag-input .tag-remove:hover { color: #dc2626; }
+					.tag-input input { border: none; outline: none; font-size: 13px; flex: 1; min-width: 80px; padding: 2px 0; }
 					.dropdown { position: relative; }
 					.dropdown-menu { display: none; position: absolute; right: 0; top: 100%; margin-top: 4px; background: #fff; border: 1px solid #e5e5e5; min-width: 120px; z-index: 20; }
 					.dropdown-menu.open { display: block; }
@@ -238,8 +244,11 @@ export const Render = ({ isAuthenticated, showWarning }: { isAuthenticated: bool
 										</select>
 									</div>
 									<div class="form-field">
-										<label>Model 名称（多个用逗号分隔）</label>
-										<input type="text" id="ak-model" placeholder="claude-3-5-sonnet,gpt-4o" required />
+										<label>Model 名称</label>
+										<div class="tag-input" id="ak-model-tags">
+											<input type="text" id="ak-model-input" placeholder="输入模型名称，按回车添加" />
+										</div>
+										<input type="hidden" id="ak-model" required />
 									</div>
 								</div>
 								<textarea id="api-keys" style="height: 80px" placeholder="请输入API密钥，每行一个"></textarea>
@@ -489,7 +498,7 @@ document.addEventListener('DOMContentLoaded', () => {
 						'<td><input type="checkbox" class="key-cb" data-key="' + safeKey + '" data-hce="' + (k.health_check_enabled ? '1' : '0') + '" /></td>' +
 						'<td class="mono"><span class="key-display" data-full="' + safeKey + '" data-masked="' + maskedKey + '">' + maskedKey + '</span><button class="eye-btn" title="显示/隐藏">👁</button></td>' +
 						'<td class="text-muted">' + E(k.provider_id) + '</td>' +
-						'<td class="text-muted">' + E(k.model || '-') + '</td>' +
+						'<td>' + (k.model ? k.model.split(',').map(m => '<span class="tag">' + E(m.trim()) + '</span>').join(' ') : '<span class="text-muted">-</span>') + '</td>' +
 						'<td>' + (k.key_group === 'normal' ? '<span class="status-ok">正常</span>' : '<span class="status-err">' + E(k.key_group) + '</span>') + '</td>' +
 						'<td>' + (k.enabled ? '<span class="status-ok">是</span>' : '<span class="status-err">否</span>') + '</td>' +
 						'<td>' + (k.in_default_rotation ? '<span class="status-ok">是</span>' : '<span class="status-err">否</span>') + '</td>' +
@@ -547,6 +556,42 @@ document.addEventListener('DOMContentLoaded', () => {
 	});
 	document.addEventListener('click', () => document.getElementById('more-actions-menu').classList.remove('open'));
 
+	// Tag input for models
+	const modelTags = document.getElementById('ak-model-tags');
+	const modelInput = document.getElementById('ak-model-input');
+	const modelHidden = document.getElementById('ak-model');
+	function syncModelTags() {
+		const tags = modelTags.querySelectorAll('.tag');
+		modelHidden.value = Array.from(tags).map(t => t.dataset.value).join(',');
+		modelHidden.dispatchEvent(new Event('input'));
+	}
+	function addModelTag(value) {
+		value = value.trim().replace(/[,，;；|、\s]+/g, '');
+		if (!value) return;
+		const existing = Array.from(modelTags.querySelectorAll('.tag')).map(t => t.dataset.value);
+		if (existing.includes(value)) return;
+		const tag = document.createElement('span');
+		tag.className = 'tag';
+		tag.dataset.value = value;
+		tag.innerHTML = E(value) + '<span class="tag-remove">×</span>';
+		tag.querySelector('.tag-remove').addEventListener('click', () => { tag.remove(); syncModelTags(); });
+		modelTags.insertBefore(tag, modelInput);
+		modelInput.value = '';
+		syncModelTags();
+	}
+	modelInput.addEventListener('keydown', (e) => {
+		if (e.key === 'Enter' || e.key === ',') {
+			e.preventDefault();
+			addModelTag(modelInput.value);
+		}
+		if (e.key === 'Backspace' && !modelInput.value) {
+			const tags = modelTags.querySelectorAll('.tag');
+			if (tags.length) { tags[tags.length - 1].remove(); syncModelTags(); }
+		}
+	});
+	modelInput.addEventListener('blur', () => { if (modelInput.value) addModelTag(modelInput.value); });
+	modelTags.addEventListener('click', () => modelInput.focus());
+
 	async function toggleSelectedKeys(enabled) {
 		const keys = Array.from(document.querySelectorAll('.key-cb:checked')).map(cb => cb.dataset.key);
 		if (!keys.length) return;
@@ -580,7 +625,7 @@ document.addEventListener('DOMContentLoaded', () => {
 			if (!keys.length) { toast('请输入至少一个密钥', true); return; }
 			const resp = await fetch('/api/keys', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ keys, provider_id, model, health_check_enabled, in_default_rotation }) });
 			const result = await resp.json();
-			if (resp.ok) { toast(result.message); document.getElementById('api-keys').value = ''; loadKeys(); }
+			if (resp.ok) { toast(result.message); document.getElementById('api-keys').value = ''; modelTags.querySelectorAll('.tag').forEach(t => t.remove()); modelHidden.value = ''; loadKeys(); }
 			else toast('添加失败: ' + (result.error || ''), true);
 		}
 	});
@@ -588,7 +633,8 @@ document.addEventListener('DOMContentLoaded', () => {
 	function startEdit(key, provider, model, hce, rotation) {
 		editingKey = key;
 		document.getElementById('ak-provider').value = provider;
-		document.getElementById('ak-model').value = model;
+		modelTags.querySelectorAll('.tag').forEach(t => t.remove());
+		model.split(',').forEach(m => { if (m.trim()) addModelTag(m.trim()); });
 		document.getElementById('ak-health-check').checked = hce === '1';
 		document.getElementById('ak-rotation').checked = rotation === '1';
 		document.getElementById('api-keys').disabled = true;
@@ -599,6 +645,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
 	function cancelEdit() {
 		editingKey = null;
+		modelTags.querySelectorAll('.tag').forEach(t => t.remove());
+		modelHidden.value = '';
 		document.getElementById('api-keys').disabled = false;
 		document.getElementById('api-keys').placeholder = '请输入API密钥，每行一个';
 		submitBtn.textContent = '添加密钥';
