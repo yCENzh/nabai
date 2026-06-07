@@ -216,7 +216,8 @@ export const Render = ({ isAuthenticated, showWarning }: { isAuthenticated: bool
 								<div class="form-actions">
 									<label class="checkbox-label"><input type="checkbox" id="pf-enabled" checked /> 启用</label>
 									<label class="checkbox-label"><input type="checkbox" id="pf-forward" /> 透传客户端密钥</label>
-									<button type="submit" class="btn btn-primary">保存</button>
+									<button type="submit" class="btn btn-primary" id="provider-submit-btn">保存</button>
+									<button type="button" class="btn hidden" id="cancel-provider-btn">取消</button>
 								</div>
 							</form>
 						</div>
@@ -365,7 +366,8 @@ export const Render = ({ isAuthenticated, showWarning }: { isAuthenticated: bool
 								</div>
 								<div class="form-actions">
 									<label class="checkbox-label"><input type="checkbox" id="ef-enabled" checked /> 启用</label>
-									<button type="submit" class="btn btn-primary">保存</button>
+									<button type="submit" class="btn btn-primary" id="endpoint-submit-btn">保存</button>
+									<button type="button" class="btn hidden" id="cancel-endpoint-btn">取消</button>
 								</div>
 							</form>
 						</div>
@@ -504,10 +506,21 @@ document.addEventListener('DOMContentLoaded', () => {
 		try {
 			const resp = await fetch('/api/providers', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) });
 			const result = await resp.json();
-			if (resp.ok) { toast(result.message); providerForm.reset(); loadProviders(); }
+			if (resp.ok) { toast(result.message); cancelProviderEdit(); loadProviders(); }
 			else toast('保存失败: ' + (result.error || ''), true);
 		} catch (err) { toast('请求失败', true); }
 	});
+
+	let editingProvider = false;
+	function cancelProviderEdit() {
+		editingProvider = false;
+		providerForm.reset();
+		document.getElementById('pf-enabled').checked = true;
+		document.getElementById('provider-submit-btn').textContent = '保存';
+		document.getElementById('cancel-provider-btn').classList.add('hidden');
+		document.getElementById('pf-id').disabled = false;
+	}
+	document.getElementById('cancel-provider-btn').addEventListener('click', cancelProviderEdit);
 
 	providersTableBody.addEventListener('click', async (e) => {
 		const btn = e.target.closest('button');
@@ -545,11 +558,15 @@ document.addEventListener('DOMContentLoaded', () => {
 			else toast('删除失败: ' + (result.error || ''), true);
 		}
 		if (btn.classList.contains('edit-provider')) {
+			editingProvider = true;
 			document.getElementById('pf-id').value = btn.dataset.id;
+			document.getElementById('pf-id').disabled = true;
 			document.getElementById('pf-type').value = btn.dataset.type;
 			document.getElementById('pf-name').value = btn.dataset.name;
 			document.getElementById('pf-base-url').value = btn.dataset.url;
 			document.getElementById('pf-enabled').checked = btn.dataset.enabled === '1';
+			document.getElementById('provider-submit-btn').textContent = '更新';
+			document.getElementById('cancel-provider-btn').classList.remove('hidden');
 			try { const cfg = JSON.parse(btn.dataset.config || '{}'); document.getElementById('pf-forward').checked = cfg.forward_client_key === true; } catch { document.getElementById('pf-forward').checked = false; }
 		}
 	});
@@ -763,9 +780,21 @@ document.addEventListener('DOMContentLoaded', () => {
 		if (!models.length) { toast('请至少绑定一个模型', true); return; }
 		const resp = await fetch('/api/endpoints', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) });
 		const result = await resp.json();
-		if (resp.ok) { toast(result.message); endpointForm.reset(); loadEndpoints(); }
+		if (resp.ok) { toast(result.message); cancelEndpointEdit(); loadEndpoints(); }
 		else toast('保存失败: ' + (result.error || ''), true);
 	});
+
+	let editingEndpoint = false;
+	function cancelEndpointEdit() {
+		editingEndpoint = false;
+		endpointForm.reset();
+		document.getElementById('ef-enabled').checked = true;
+		document.getElementById('endpoint-submit-btn').textContent = '保存';
+		document.getElementById('cancel-endpoint-btn').classList.add('hidden');
+		document.getElementById('ef-id').disabled = false;
+		document.querySelectorAll('.ef-model-cb').forEach(cb => cb.checked = false);
+	}
+	document.getElementById('cancel-endpoint-btn').addEventListener('click', cancelEndpointEdit);
 
 	endpointsTableBody.addEventListener('click', async (e) => {
 		const btn = e.target.closest('button');
@@ -776,9 +805,13 @@ document.addEventListener('DOMContentLoaded', () => {
 			loadEndpoints();
 		}
 		if (btn.classList.contains('edit-endpoint')) {
+			editingEndpoint = true;
 			document.getElementById('ef-id').value = btn.dataset.id;
+			document.getElementById('ef-id').disabled = true;
 			document.getElementById('ef-path').value = btn.dataset.path;
 			document.getElementById('ef-enabled').checked = btn.dataset.enabled === '1';
+			document.getElementById('endpoint-submit-btn').textContent = '更新';
+			document.getElementById('cancel-endpoint-btn').classList.remove('hidden');
 			const modelList = btn.dataset.models ? btn.dataset.models.split(',') : [];
 			loadEndpointModelsList(modelList);
 		}
