@@ -404,6 +404,17 @@ function buildClientScript(): string {
 	return `
 const E = (s) => String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
 
+function toast(msg, isError) {
+	const c = document.getElementById('toast-container');
+	const el = document.createElement('div');
+	el.className = 'toast' + (isError ? ' toast-error' : '');
+	el.textContent = msg;
+	c.appendChild(el);
+	setTimeout(() => { el.style.opacity = '0'; el.style.transition = 'opacity .3s'; setTimeout(() => el.remove(), 300); }, 3000);
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+
 function confirmModal(title, body, buttons) {
 	return new Promise(resolve => {
 		document.getElementById('confirm-title').textContent = title;
@@ -421,16 +432,6 @@ function confirmModal(title, body, buttons) {
 	});
 }
 
-function toast(msg, isError) {
-	const c = document.getElementById('toast-container');
-	const el = document.createElement('div');
-	el.className = 'toast' + (isError ? ' toast-error' : '');
-	el.textContent = msg;
-	c.appendChild(el);
-	setTimeout(() => { el.style.opacity = '0'; el.style.transition = 'opacity .3s'; setTimeout(() => el.remove(), 300); }, 3000);
-}
-
-document.addEventListener('DOMContentLoaded', () => {
 	// ─── Navigation ───
 	const navLinks = document.querySelectorAll('#topnav-links a');
 	const pages = document.querySelectorAll('.page');
