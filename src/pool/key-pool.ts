@@ -75,7 +75,8 @@ export async function runHealthCheck(sql: DurableObjectStorage['sql']) {
 	const rows = Array.from(sql.exec(`
 		SELECT k.api_key, p.type, p.name, p.base_url, m.model
 		FROM api_keys k
-		JOIN providers p ON p.id = k.provider_id
+		JOIN key_providers kp ON kp.api_key = k.api_key
+		JOIN providers p ON p.id = kp.provider_id
 		JOIN key_models m ON m.api_key = k.api_key
 		WHERE k.key_group = 'abnormal' AND k.health_check_enabled = 1 AND k.enabled = 1 AND p.enabled = 1
 	`).raw<any>());

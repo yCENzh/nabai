@@ -4,13 +4,11 @@ import { GeminiProvider } from '../providers/gemini';
 import { OpenAICompatProvider } from '../providers/openai-compat';
 import { AnthropicProvider } from '../providers/anthropic';
 
-/** Extract endpointId from URL path like /e/:endpointId/... Returns null for legacy paths. */
 export function extractEndpointId(pathname: string): string | null {
 	const match = pathname.match(/^\/e\/([^/]+)\//);
 	return match ? match[1] : null;
 }
 
-/** Strip the /e/:endpointId prefix from pathname */
 export function stripEndpointPrefix(pathname: string): string {
 	return pathname.replace(/^\/e\/[^/]+/, '');
 }
@@ -18,7 +16,6 @@ export function stripEndpointPrefix(pathname: string): string {
 export interface EndpointConfig {
 	id: string;
 	path: string;
-	provider_id: string;
 	enabled: boolean;
 }
 
@@ -29,41 +26,6 @@ export interface ProviderConfig {
 	base_url: string;
 	enabled: boolean;
 	config_json: string;
-}
-
-/** Look up endpoint config by id. Returns null if not found or disabled. */
-export async function getEndpointConfig(
-	sql: DurableObjectStorage['sql'],
-	endpointId: string
-): Promise<EndpointConfig | null> {
-	const results = await sql
-		.exec('SELECT id, path, provider_id, enabled FROM endpoints WHERE id = ?', endpointId)
-		.raw<any>();
-	const rows = Array.from(results);
-	if (rows.length === 0) return null;
-	const row = rows[0] as any;
-	const config: EndpointConfig = {
-		id: row[0], path: row[1], provider_id: row[2], enabled: row[3] === 1,
-	};
-	return config.enabled ? config : null;
-}
-
-/** Look up provider config by id. Returns null if not found. */
-export async function getProviderConfig(
-	sql: DurableObjectStorage['sql'],
-	providerId: string
-): Promise<ProviderConfig | null> {
-	const results = await sql
-		.exec('SELECT id, type, name, base_url, enabled, config_json FROM providers WHERE id = ?', providerId)
-		.raw<any>();
-	const rows = Array.from(results);
-	if (rows.length === 0) return null;
-	const row = rows[0] as any;
-	const config: ProviderConfig = {
-		id: row[0], type: row[1], name: row[2], base_url: row[3],
-		enabled: row[4] === 1, config_json: row[5],
-	};
-	return config.enabled ? config : null;
 }
 
 export interface ResolvedProvider {
@@ -80,63 +42,81 @@ function buildProvider(provConfig: ProviderConfig): Provider {
 	return new GeminiProvider(provConfig.base_url);
 }
 
-async function resolveDefaultEndpoint(sql: DurableObjectStorage['sql'], model: string): Promise<ResolvedProvider> {
-	const rows = Array.from(sql.exec(`
-		SELECT k.api_key, p.id, p.type, p.name, p.base_url, p.enabled, p.config_json
+export async function resolveProvider(sql: DurableObjectStorage['sql'], endpointId: string, model?: string): Promise<ResolvedProvider> {
+	const epRows = Array.from(sql.exec(
+		'SELECT id, path, enabled FROM endpoints WHERE id = ?', endpointId
+	).raw<any>());
+	if (epRows.length === 0) {
+		throw new HttpError(
+			endpointId === 'default'
+				? 'No endpoint configured. Create an endpoint in the admin panel.'
+				: `Endpoint "${endpointId}" not found.`,
+			404
+		);
+	}
+	const ep = epRows[0];
+	if (ep[2] !== 1) throw new HttpError(`Endpoint "${endpointId}" is disabled.`, 404);
+	const endpoint: EndpointConfig = { id: ep[0], path: ep[1], enabled: true };
+
+	if (!model) throw new HttpError('Model is required. Provide a model in the request body.', 400);
+
+	const emRows = Array.from(sql.exec(
+		'SELECT 1 FROM endpoint_models WHERE endpoint_id = ? AND model = ?', endpointId, model
+	).raw<any>());
+	if (emRows.length === 0) {
+		throw new HttpError(`Model "${model}" is not bound to endpoint "${endpointId}".`, 403);
+	}
+
+	const keys = Array.from(sql.exec(`
+		SELECT DISTINCT k.api_key
 		FROM api_keys k
-		JOIN providers p ON p.id = k.provider_id
-		JOIN key_models m ON m.api_key = k.api_key AND m.model = ?
-		WHERE p.enabled = 1 AND p.in_default_rotation = 1
-		  AND k.enabled = 1 AND k.in_default_rotation = 1 AND k.key_group = 'normal'
+		JOIN key_models km ON km.api_key = k.api_key AND km.model = ?
+		WHERE k.enabled = 1 AND k.key_group = 'normal'
 		ORDER BY RANDOM() LIMIT 1
 	`, model).raw<any>());
 
-	if (rows.length === 0) {
-		throw new HttpError(`No rotation keys available for model "${model}". Add a key with this model and enable "加入轮询".`, 503);
+	if (keys.length === 0) {
+		throw new HttpError(`No available key for model "${model}" on endpoint "${endpointId}".`, 503);
 	}
 
-	const row = rows[0];
-	const apiKey = row[0] as string;
+	const apiKey = keys[0][0] as string;
+
+	const providers = Array.from(sql.exec(`
+		SELECT p.id, p.type, p.name, p.base_url, p.enabled, p.config_json
+		FROM key_providers kp
+		JOIN providers p ON p.id = kp.provider_id
+		WHERE kp.api_key = ? AND p.enabled = 1
+		ORDER BY RANDOM() LIMIT 1
+	`, apiKey).raw<any>());
+
+	if (providers.length === 0) {
+		throw new HttpError(`No available provider for key on endpoint "${endpointId}".`, 503);
+	}
+
+	const prow = providers[0];
 	const provConfig: ProviderConfig = {
-		id: row[1] as string, type: row[2] as string, name: row[3] as string,
-		base_url: row[4] as string, enabled: row[5] === 1, config_json: row[6] as string,
+		id: prow[0] as string, type: prow[1] as string, name: prow[2] as string,
+		base_url: prow[3] as string, enabled: prow[4] === 1, config_json: prow[5] as string,
 	};
+	let forwardClientKey = false;
+	try { forwardClientKey = JSON.parse(provConfig.config_json).forward_client_key === true; } catch {}
 	console.log(`[rot] key=${maskKey(apiKey)} provider=${provConfig.name}(${provConfig.type})`);
-	return { provider: buildProvider(provConfig), providerName: provConfig.name, forwardClientKey: false, endpoint: null, apiKey };
+	return { provider: buildProvider(provConfig), providerName: provConfig.name, forwardClientKey, endpoint, apiKey };
 }
 
-/** Resolve endpoint → provider config → Provider instance. Throws HttpError on failure. */
-export async function resolveProvider(sql: DurableObjectStorage['sql'], endpointId: string, model?: string): Promise<ResolvedProvider> {
-	if (endpointId === 'default') {
-		const endpoint = await getEndpointConfig(sql, 'default');
-		if (endpoint) {
-			const provConfig = await getProviderConfig(sql, endpoint.provider_id);
-			if (!provConfig) {
-				throw new HttpError(`Provider "${endpoint.provider_id}" is disabled or not found.`, 503);
-			}
-			let forwardClientKey = false;
-			try { forwardClientKey = JSON.parse(provConfig.config_json).forward_client_key === true; } catch {}
-			return { provider: buildProvider(provConfig), providerName: provConfig.name, forwardClientKey, endpoint };
-		}
-		if (!model) throw new HttpError('Model is required for default endpoint rotation.', 400);
-		return resolveDefaultEndpoint(sql, model);
-	}
-
-	const endpoint = await getEndpointConfig(sql, endpointId);
-	if (!endpoint) {
-		throw new HttpError(`Endpoint "${endpointId}" not found or disabled.`, 404);
-	}
-
-	const provConfig = await getProviderConfig(sql, endpoint.provider_id);
-	if (!provConfig) {
-		throw new HttpError(`Provider "${endpoint.provider_id}" is disabled or not found.`, 503);
-	}
-
-	let forwardClientKey = false;
-	try {
-		const cfg = JSON.parse(provConfig.config_json);
-		forwardClientKey = cfg.forward_client_key === true;
-	} catch {}
-
-	return { provider: buildProvider(provConfig), providerName: provConfig.name, forwardClientKey, endpoint };
+export async function getProviderConfig(
+	sql: DurableObjectStorage['sql'],
+	providerId: string
+): Promise<ProviderConfig | null> {
+	const results = await sql
+		.exec('SELECT id, type, name, base_url, enabled, config_json FROM providers WHERE id = ?', providerId)
+		.raw<any>();
+	const rows = Array.from(results);
+	if (rows.length === 0) return null;
+	const row = rows[0] as any;
+	const config: ProviderConfig = {
+		id: row[0], type: row[1], name: row[2], base_url: row[3],
+		enabled: row[4] === 1, config_json: row[5],
+	};
+	return config.enabled ? config : null;
 }

@@ -276,12 +276,7 @@ export async function handleOpenAI(
 		if (resolvedApiKey) {
 			apiKey = resolvedApiKey;
 		} else {
-			const providerId = endpoint?.provider_id;
-			apiKey = await getRandomApiKey(sql, providerId);
-			if (!apiKey) {
-				const hint = providerId ? ` for provider "${providerId}"` : '';
-				return new Response(`No API keys available${hint}. Please add keys in the admin panel.`, { status: 500 });
-			}
+			return new Response('No API keys configured for this endpoint.', { status: 500 });
 		}
 	}
 

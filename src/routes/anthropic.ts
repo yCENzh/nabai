@@ -1,6 +1,5 @@
 import { HttpError, generateId } from '../core/utils';
 import { AnthropicProtocolAdapter } from '../protocols/anthropic';
-import { getRandomApiKey } from '../pool/key-pool';
 import { resolveProvider } from '../core/router';
 
 const anthropicAdapter = new AnthropicProtocolAdapter();
@@ -46,14 +45,10 @@ export async function handleAnthropicMessages(
 		if (resolvedApiKey) {
 			apiKey = resolvedApiKey;
 		} else {
-			const providerId = endpoint?.provider_id;
-			apiKey = await getRandomApiKey(sql, providerId);
-			if (!apiKey) {
-				return anthropicAdapter.renderError(
-					new HttpError('No API keys configured in the load balancer.', 500),
-					{ requestId }
-				);
-			}
+			return anthropicAdapter.renderError(
+				new HttpError('No API keys configured for this endpoint.', 500),
+				{ requestId }
+			);
 		}
 	}
 

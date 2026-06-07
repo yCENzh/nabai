@@ -4,10 +4,10 @@ import { BASE_URL, maskKey } from '../core/utils';
 
 export async function handleGetProviders(sql: DurableObjectStorage['sql']): Promise<Response> {
 	try {
-		const results = sql.exec('SELECT id, type, name, base_url, enabled, config_json, in_default_rotation FROM providers ORDER BY created_at').raw<any>();
+		const results = sql.exec('SELECT id, type, name, base_url, enabled, config_json FROM providers ORDER BY created_at').raw<any>();
 		const providers = Array.from(results).map((row: any) => ({
 			id: row[0], type: row[1], name: row[2], base_url: row[3],
-			enabled: row[4] === 1, config_json: row[5], in_default_rotation: row[6] === 1,
+			enabled: row[4] === 1, config_json: row[5],
 		}));
 		return jsonResponse({ providers });
 	} catch (error: any) {
@@ -18,16 +18,15 @@ export async function handleGetProviders(sql: DurableObjectStorage['sql']): Prom
 export async function handleUpsertProvider(request: Request, sql: DurableObjectStorage['sql']): Promise<Response> {
 	try {
 		const body = await request.json();
-		const { id, type, name, base_url, enabled, config_json, in_default_rotation } = body as any;
+		const { id, type, name, base_url, enabled, config_json } = body as any;
 		if (!id || !type || !name || !base_url) {
 			return jsonResponse({ error: 'id, type, name, base_url 是必填项' }, 400);
 		}
-		const rotation = in_default_rotation ? 1 : 0;
 		sql.exec(
-			`INSERT INTO providers (id, type, name, base_url, enabled, config_json, in_default_rotation, updated_at)
-			 VALUES (?, ?, ?, ?, ?, ?, ?, unixepoch())
-			 ON CONFLICT(id) DO UPDATE SET type=excluded.type, name=excluded.name, base_url=excluded.base_url, enabled=excluded.enabled, config_json=excluded.config_json, in_default_rotation=excluded.in_default_rotation, updated_at=unixepoch()`,
-			id, type, name, base_url, enabled !== false ? 1 : 0, config_json ?? '{}', rotation
+			`INSERT INTO providers (id, type, name, base_url, enabled, config_json, updated_at)
+			 VALUES (?, ?, ?, ?, ?, ?, unixepoch())
+			 ON CONFLICT(id) DO UPDATE SET type=excluded.type, name=excluded.name, base_url=excluded.base_url, enabled=excluded.enabled, config_json=excluded.config_json, updated_at=unixepoch()`,
+			id, type, name, base_url, enabled !== false ? 1 : 0, config_json ?? '{}'
 		);
 		return jsonResponse({ message: 'Provider 保存成功。' });
 	} catch (error: any) {
@@ -51,24 +50,26 @@ export async function handleDeleteProvider(request: Request, sql: DurableObjectS
 
 export async function handleApiKeys(request: Request, sql: DurableObjectStorage['sql']): Promise<Response> {
 	try {
-		const { keys, provider_id, health_check_enabled, in_default_rotation } = (await request.json()) as {
-			keys: string[]; provider_id?: string; health_check_enabled?: boolean; in_default_rotation?: boolean;
+		const { keys, provider_ids, health_check_enabled } = (await request.json()) as {
+			keys: string[]; provider_ids?: string[]; health_check_enabled?: boolean;
 		};
 		if (!Array.isArray(keys) || keys.length === 0) {
 			return jsonResponse({ error: '请求体无效，需要一个包含key的非空数组。' }, 400);
 		}
-		if (!provider_id) {
-			return jsonResponse({ error: 'provider_id 是必填项' }, 400);
+		if (!Array.isArray(provider_ids) || provider_ids.length === 0) {
+			return jsonResponse({ error: '至少选择一个 Provider' }, 400);
 		}
 		const hce = health_check_enabled !== false ? 1 : 0;
-		const rotation = in_default_rotation ? 1 : 0;
 		let added = 0;
 		let skipped = 0;
 		for (const key of keys) {
 			const existing = Array.from(sql.exec('SELECT 1 FROM api_keys WHERE api_key = ?', key).raw<any>());
 			if (existing.length > 0) { skipped++; continue; }
 			const keyId = crypto.randomUUID();
-			sql.exec('INSERT INTO api_keys (id, provider_id, api_key, health_check_enabled, in_default_rotation) VALUES (?, ?, ?, ?, ?)', keyId, provider_id, key, hce, rotation);
+			sql.exec('INSERT INTO api_keys (id, api_key, health_check_enabled) VALUES (?, ?, ?)', keyId, key, hce);
+			for (const pid of provider_ids) {
+				sql.exec('INSERT OR IGNORE INTO key_providers (id, api_key, provider_id) VALUES (?, ?, ?)', crypto.randomUUID(), key, pid);
+			}
 			added++;
 		}
 		if (added === 0) {
@@ -83,15 +84,19 @@ export async function handleApiKeys(request: Request, sql: DurableObjectStorage[
 
 export async function handleUpdateApiKey(request: Request, sql: DurableObjectStorage['sql']): Promise<Response> {
 	try {
-		const { api_key, provider_id, health_check_enabled, in_default_rotation } = (await request.json()) as {
-			api_key: string; provider_id?: string; health_check_enabled?: boolean; in_default_rotation?: boolean;
+		const { api_key, provider_ids, health_check_enabled } = (await request.json()) as {
+			api_key: string; provider_ids?: string[]; health_check_enabled?: boolean;
 		};
 		if (!api_key) return jsonResponse({ error: 'api_key 是必填项' }, 400);
-		if (!provider_id) return jsonResponse({ error: 'provider_id 是必填项' }, 400);
+		if (!Array.isArray(provider_ids) || provider_ids.length === 0) return jsonResponse({ error: '至少选择一个 Provider' }, 400);
 		sql.exec(
-			'UPDATE api_keys SET provider_id = ?, health_check_enabled = ?, in_default_rotation = ? WHERE api_key = ?',
-			provider_id, health_check_enabled !== false ? 1 : 0, in_default_rotation ? 1 : 0, api_key
+			'UPDATE api_keys SET health_check_enabled = ? WHERE api_key = ?',
+			health_check_enabled !== false ? 1 : 0, api_key
 		);
+		sql.exec('DELETE FROM key_providers WHERE api_key = ?', api_key);
+		for (const pid of provider_ids) {
+			sql.exec('INSERT OR IGNORE INTO key_providers (id, api_key, provider_id) VALUES (?, ?, ?)', crypto.randomUUID(), api_key, pid);
+		}
 		return jsonResponse({ message: '密钥更新成功。' });
 	} catch (error: any) {
 		console.error('更新密钥失败:', error);
@@ -111,6 +116,7 @@ export async function handleDeleteApiKeys(request: Request, sql: DurableObjectSt
 			const batch = keys.slice(i, i + batchSize);
 			const placeholders = batch.map(() => '?').join(',');
 			sql.exec(`DELETE FROM key_models WHERE api_key IN (${placeholders})`, ...batch);
+			sql.exec(`DELETE FROM key_providers WHERE api_key IN (${placeholders})`, ...batch);
 			sql.exec(`DELETE FROM api_keys WHERE api_key IN (${placeholders})`, ...batch);
 		}
 
@@ -151,7 +157,8 @@ export async function handleApiKeysCheck(request: Request, sql: DurableObjectSto
 		const keyProviderRows = sql.exec(`
 			SELECT k.api_key, p.type, p.name, p.base_url, GROUP_CONCAT(m.model) as models
 			FROM api_keys k
-			JOIN providers p ON p.id = k.provider_id
+			JOIN key_providers kp ON kp.api_key = k.api_key
+			JOIN providers p ON p.id = kp.provider_id
 			LEFT JOIN key_models m ON m.api_key = k.api_key
 			WHERE p.enabled = 1
 			GROUP BY k.api_key, p.type, p.name, p.base_url
@@ -230,15 +237,21 @@ export async function getAllApiKeys(request: Request, sql: DurableObjectStorage[
 		const total = totalArray.length > 0 ? totalArray[0][0] : 0;
 
 		const results = sql
-			.exec(`SELECT api_key, key_group, provider_id, health_check_enabled, enabled, in_default_rotation
-				   FROM api_keys
+			.exec(`SELECT k.api_key, k.key_group, k.health_check_enabled, k.enabled,
+				   GROUP_CONCAT(DISTINCT kp.provider_id) as provider_ids,
+				   GROUP_CONCAT(DISTINCT p.name) as provider_names
+				   FROM api_keys k
+				   LEFT JOIN key_providers kp ON kp.api_key = k.api_key
+				   LEFT JOIN providers p ON p.id = kp.provider_id
+				   GROUP BY k.api_key
 				   LIMIT ? OFFSET ?`, pageSize, offset)
 			.raw<any>();
 		const keys = results
 			? Array.from(results).map((row: any) => ({
-					api_key: row[0], key_group: row[1], provider_id: row[2],
-					health_check_enabled: row[3] === 1, enabled: row[4] === 1,
-					in_default_rotation: row[5] === 1,
+					api_key: row[0], key_group: row[1],
+					health_check_enabled: row[2] === 1, enabled: row[3] === 1,
+					provider_ids: row[4] ? row[4].split(',') : [],
+					provider_names: row[5] ? row[5].split(',') : [],
 			  }))
 			: [];
 
@@ -300,10 +313,13 @@ export async function handleDeleteModel(request: Request, sql: DurableObjectStor
 
 export async function handleGetEndpoints(sql: DurableObjectStorage['sql']): Promise<Response> {
 	try {
-		const results = sql.exec('SELECT id, path, provider_id, enabled FROM endpoints ORDER BY created_at').raw<any>();
-		const endpoints = Array.from(results).map((row: any) => ({
-			id: row[0], path: row[1], provider_id: row[2], enabled: row[3] === 1,
-		}));
+		const endpoints = Array.from(sql.exec('SELECT id, path, enabled FROM endpoints ORDER BY created_at').raw<any>())
+			.map((row: any) => ({ id: row[0], path: row[1], enabled: row[2] === 1 }));
+		for (const ep of endpoints) {
+			const models = Array.from(sql.exec('SELECT model FROM endpoint_models WHERE endpoint_id = ?', ep.id).raw<any>())
+				.map((r: any) => r[0]);
+			(ep as any).models = models;
+		}
 		return jsonResponse({ endpoints });
 	} catch (error: any) {
 		return jsonResponse({ error: error.message }, 500);
@@ -312,19 +328,22 @@ export async function handleGetEndpoints(sql: DurableObjectStorage['sql']): Prom
 
 export async function handleUpsertEndpoint(request: Request, sql: DurableObjectStorage['sql']): Promise<Response> {
 	try {
-		const { id, path, provider_id, enabled } = (await request.json()) as any;
+		const { id, path, models, enabled } = (await request.json()) as any;
 		if (!id || !path) {
 			return jsonResponse({ error: 'id, path 是必填项' }, 400);
 		}
-		if (!provider_id) {
-			return jsonResponse({ error: 'provider_id 是必填项' }, 400);
-		}
 		sql.exec(
-			`INSERT INTO endpoints (id, path, provider_id, enabled, updated_at)
-			 VALUES (?, ?, ?, ?, unixepoch())
-			 ON CONFLICT(id) DO UPDATE SET path=excluded.path, provider_id=excluded.provider_id, enabled=excluded.enabled, updated_at=unixepoch()`,
-			id, path, provider_id, enabled !== false ? 1 : 0
+			`INSERT INTO endpoints (id, path, enabled, updated_at)
+			 VALUES (?, ?, ?, unixepoch())
+			 ON CONFLICT(id) DO UPDATE SET path=excluded.path, enabled=excluded.enabled, updated_at=unixepoch()`,
+			id, path, enabled !== false ? 1 : 0
 		);
+		sql.exec('DELETE FROM endpoint_models WHERE endpoint_id = ?', id);
+		if (Array.isArray(models)) {
+			for (const model of models) {
+				sql.exec('INSERT OR IGNORE INTO endpoint_models (id, endpoint_id, model) VALUES (?, ?, ?)', crypto.randomUUID(), id, model);
+			}
+		}
 		return jsonResponse({ message: '端点保存成功。' });
 	} catch (error: any) {
 		return jsonResponse({ error: error.message }, 500);
@@ -335,6 +354,7 @@ export async function handleDeleteEndpoint(request: Request, sql: DurableObjectS
 	try {
 		const { id } = (await request.json()) as any;
 		if (!id) return jsonResponse({ error: 'id 是必填项' }, 400);
+		sql.exec('DELETE FROM endpoint_models WHERE endpoint_id = ?', id);
 		sql.exec('DELETE FROM endpoints WHERE id = ?', id);
 		return jsonResponse({ message: '端点已删除。' });
 	} catch (error: any) {
@@ -347,22 +367,30 @@ export async function handleDeleteEndpoint(request: Request, sql: DurableObjectS
 export async function handleBackup(sql: DurableObjectStorage['sql']): Promise<Response> {
 	try {
 		const providers = Array.from(
-			sql.exec('SELECT id, type, name, base_url, enabled, config_json, in_default_rotation FROM providers ORDER BY created_at').raw<any>()
-		).map((r: any) => ({ id: r[0], type: r[1], name: r[2], base_url: r[3], enabled: r[4] === 1, config_json: r[5], in_default_rotation: r[6] === 1 }));
+			sql.exec('SELECT id, type, name, base_url, enabled, config_json FROM providers ORDER BY created_at').raw<any>()
+		).map((r: any) => ({ id: r[0], type: r[1], name: r[2], base_url: r[3], enabled: r[4] === 1, config_json: r[5] }));
 
 		const keys = Array.from(
-			sql.exec('SELECT k.provider_id, k.api_key, k.enabled, k.health_check_enabled, k.in_default_rotation FROM api_keys k ORDER BY created_at').raw<any>()
-		).map((r: any) => ({ provider_id: r[0], api_key: r[1], enabled: r[2] === 1, health_check_enabled: r[3] === 1, in_default_rotation: r[4] === 1 }));
+			sql.exec('SELECT api_key, enabled, health_check_enabled FROM api_keys ORDER BY created_at').raw<any>()
+		).map((r: any) => ({ api_key: r[0], enabled: r[1] === 1, health_check_enabled: r[2] === 1 }));
 
-		const models = Array.from(
+		const keyProviders = Array.from(
+			sql.exec('SELECT api_key, provider_id FROM key_providers ORDER BY created_at').raw<any>()
+		).map((r: any) => ({ api_key: r[0], provider_id: r[1] }));
+
+		const keyModels = Array.from(
 			sql.exec('SELECT model, api_key FROM key_models ORDER BY created_at').raw<any>()
 		).map((r: any) => ({ model: r[0], api_key: r[1] }));
 
-		const endpoints = Array.from(
-			sql.exec('SELECT id, path, provider_id, enabled FROM endpoints ORDER BY created_at').raw<any>()
-		).map((r: any) => ({ id: r[0], path: r[1], provider_id: r[2], enabled: r[3] === 1 }));
+		const endpointModels = Array.from(
+			sql.exec('SELECT endpoint_id, model FROM endpoint_models ORDER BY created_at').raw<any>()
+		).map((r: any) => ({ endpoint_id: r[0], model: r[1] }));
 
-		return jsonResponse({ version: 2, providers, keys, models, endpoints, exported_at: new Date().toISOString() });
+		const endpoints = Array.from(
+			sql.exec('SELECT id, path, enabled FROM endpoints ORDER BY created_at').raw<any>()
+		).map((r: any) => ({ id: r[0], path: r[1], enabled: r[2] === 1 }));
+
+		return jsonResponse({ version: 3, providers, keys, keyProviders, keyModels, endpointModels, endpoints, exported_at: new Date().toISOString() });
 	} catch (error: any) {
 		return jsonResponse({ error: error.message }, 500);
 	}
@@ -375,7 +403,9 @@ export async function handleRestore(request: Request, sql: DurableObjectStorage[
 			return jsonResponse({ error: '格式无效：需要 providers, keys, endpoints 数组' }, 400);
 		}
 
+		sql.exec('DELETE FROM endpoint_models');
 		sql.exec('DELETE FROM key_models');
+		sql.exec('DELETE FROM key_providers');
 		sql.exec('DELETE FROM api_keys');
 		sql.exec('DELETE FROM providers');
 		sql.exec('DELETE FROM endpoints');
@@ -383,8 +413,8 @@ export async function handleRestore(request: Request, sql: DurableObjectStorage[
 		for (const p of data.providers) {
 			if (!p.id || !p.type || !p.name || !p.base_url) continue;
 			sql.exec(
-				'INSERT INTO providers (id, type, name, base_url, enabled, config_json, in_default_rotation) VALUES (?, ?, ?, ?, ?, ?, ?)',
-				p.id, p.type, p.name, p.base_url, p.enabled !== false ? 1 : 0, p.config_json ?? '{}', p.in_default_rotation ? 1 : 0
+				'INSERT INTO providers (id, type, name, base_url, enabled, config_json) VALUES (?, ?, ?, ?, ?, ?)',
+				p.id, p.type, p.name, p.base_url, p.enabled !== false ? 1 : 0, p.config_json ?? '{}'
 			);
 		}
 
@@ -392,27 +422,41 @@ export async function handleRestore(request: Request, sql: DurableObjectStorage[
 			if (!k.api_key) continue;
 			const keyId = crypto.randomUUID();
 			sql.exec(
-				'INSERT INTO api_keys (id, provider_id, api_key, enabled, health_check_enabled, in_default_rotation) VALUES (?, ?, ?, ?, ?, ?)',
-				keyId, k.provider_id ?? '', k.api_key, k.enabled !== false ? 1 : 0, k.health_check_enabled !== false ? 1 : 0, k.in_default_rotation ? 1 : 0
+				'INSERT INTO api_keys (id, api_key, enabled, health_check_enabled) VALUES (?, ?, ?, ?)',
+				keyId, k.api_key, k.enabled !== false ? 1 : 0, k.health_check_enabled !== false ? 1 : 0
 			);
 		}
 
-		if (Array.isArray(data.models)) {
-			for (const m of data.models) {
-				if (!m.model || !m.api_key) continue;
-				sql.exec('INSERT INTO key_models (id, model, api_key) VALUES (?, ?, ?)', crypto.randomUUID(), m.model, m.api_key);
+		if (Array.isArray(data.keyProviders)) {
+			for (const kp of data.keyProviders) {
+				if (!kp.api_key || !kp.provider_id) continue;
+				sql.exec('INSERT INTO key_providers (id, api_key, provider_id) VALUES (?, ?, ?)', crypto.randomUUID(), kp.api_key, kp.provider_id);
+			}
+		}
+
+		if (Array.isArray(data.keyModels)) {
+			for (const km of data.keyModels) {
+				if (!km.model || !km.api_key) continue;
+				sql.exec('INSERT INTO key_models (id, model, api_key) VALUES (?, ?, ?)', crypto.randomUUID(), km.model, km.api_key);
+			}
+		}
+
+		if (Array.isArray(data.endpointModels)) {
+			for (const em of data.endpointModels) {
+				if (!em.endpoint_id || !em.model) continue;
+				sql.exec('INSERT INTO endpoint_models (id, endpoint_id, model) VALUES (?, ?, ?)', crypto.randomUUID(), em.endpoint_id, em.model);
 			}
 		}
 
 		for (const ep of data.endpoints) {
 			if (!ep.id || !ep.path) continue;
 			sql.exec(
-				'INSERT INTO endpoints (id, path, provider_id, enabled) VALUES (?, ?, ?, ?)',
-				ep.id, ep.path, ep.provider_id ?? '', ep.enabled !== false ? 1 : 0
+				'INSERT INTO endpoints (id, path, enabled) VALUES (?, ?, ?)',
+				ep.id, ep.path, ep.enabled !== false ? 1 : 0
 			);
 		}
 
-		return jsonResponse({ message: '恢复成功。', providers: data.providers.length, keys: data.keys.length, models: data.models?.length ?? 0, endpoints: data.endpoints.length });
+		return jsonResponse({ message: '恢复成功。', providers: data.providers.length, keys: data.keys.length, endpoints: data.endpoints.length });
 	} catch (error: any) {
 		return jsonResponse({ error: error.message }, 500);
 	}
