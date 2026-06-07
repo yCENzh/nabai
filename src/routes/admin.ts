@@ -51,22 +51,14 @@ export async function handleDeleteProvider(request: Request, sql: DurableObjectS
 
 export async function handleApiKeys(request: Request, sql: DurableObjectStorage['sql']): Promise<Response> {
 	try {
-		const { keys, provider_id, model, health_check_enabled, in_default_rotation } = (await request.json()) as {
-			keys: string[]; provider_id?: string; model?: string; health_check_enabled?: boolean; in_default_rotation?: boolean;
+		const { keys, provider_id, health_check_enabled, in_default_rotation } = (await request.json()) as {
+			keys: string[]; provider_id?: string; health_check_enabled?: boolean; in_default_rotation?: boolean;
 		};
 		if (!Array.isArray(keys) || keys.length === 0) {
 			return jsonResponse({ error: '请求体无效，需要一个包含key的非空数组。' }, 400);
 		}
-
 		if (!provider_id) {
 			return jsonResponse({ error: 'provider_id 是必填项' }, 400);
-		}
-		if (!model) {
-			return jsonResponse({ error: 'model 是必填项' }, 400);
-		}
-		const normalizedModel = model.replace(/[,，;；|、\s]+/g, ',').replace(/^,|,$/g, '');
-		if (!normalizedModel) {
-			return jsonResponse({ error: 'model 是必填项' }, 400);
 		}
 		const hce = health_check_enabled !== false ? 1 : 0;
 		const rotation = in_default_rotation ? 1 : 0;
@@ -76,10 +68,9 @@ export async function handleApiKeys(request: Request, sql: DurableObjectStorage[
 			const existing = Array.from(sql.exec('SELECT 1 FROM api_keys WHERE api_key = ?', key).raw<any>());
 			if (existing.length > 0) { skipped++; continue; }
 			const keyId = crypto.randomUUID();
-			sql.exec('INSERT INTO api_keys (id, provider_id, model, api_key, health_check_enabled, in_default_rotation) VALUES (?, ?, ?, ?, ?, ?)', keyId, provider_id, normalizedModel, key, hce, rotation);
+			sql.exec('INSERT INTO api_keys (id, provider_id, api_key, health_check_enabled, in_default_rotation) VALUES (?, ?, ?, ?, ?)', keyId, provider_id, key, hce, rotation);
 			added++;
 		}
-
 		if (added === 0) {
 			return jsonResponse({ error: '密钥已存在，未添加任何新密钥。' }, 409);
 		}
@@ -92,18 +83,14 @@ export async function handleApiKeys(request: Request, sql: DurableObjectStorage[
 
 export async function handleUpdateApiKey(request: Request, sql: DurableObjectStorage['sql']): Promise<Response> {
 	try {
-		const { api_key, provider_id, model, health_check_enabled, in_default_rotation } = (await request.json()) as {
-			api_key: string; provider_id?: string; model?: string; health_check_enabled?: boolean; in_default_rotation?: boolean;
+		const { api_key, provider_id, health_check_enabled, in_default_rotation } = (await request.json()) as {
+			api_key: string; provider_id?: string; health_check_enabled?: boolean; in_default_rotation?: boolean;
 		};
 		if (!api_key) return jsonResponse({ error: 'api_key 是必填项' }, 400);
 		if (!provider_id) return jsonResponse({ error: 'provider_id 是必填项' }, 400);
-		if (!model) return jsonResponse({ error: 'model 是必填项' }, 400);
-		const normalizedModel = model.replace(/[,，;；|、\s]+/g, ',').replace(/^,|,$/g, '');
-		if (!normalizedModel) return jsonResponse({ error: 'model 是必填项' }, 400);
-
 		sql.exec(
-			'UPDATE api_keys SET provider_id = ?, model = ?, health_check_enabled = ?, in_default_rotation = ? WHERE api_key = ?',
-			provider_id, normalizedModel, health_check_enabled !== false ? 1 : 0, in_default_rotation ? 1 : 0, api_key
+			'UPDATE api_keys SET provider_id = ?, health_check_enabled = ?, in_default_rotation = ? WHERE api_key = ?',
+			provider_id, health_check_enabled !== false ? 1 : 0, in_default_rotation ? 1 : 0, api_key
 		);
 		return jsonResponse({ message: '密钥更新成功。' });
 	} catch (error: any) {
@@ -123,6 +110,7 @@ export async function handleDeleteApiKeys(request: Request, sql: DurableObjectSt
 		for (let i = 0; i < keys.length; i += batchSize) {
 			const batch = keys.slice(i, i + batchSize);
 			const placeholders = batch.map(() => '?').join(',');
+			sql.exec(`DELETE FROM key_models WHERE api_key IN (${placeholders})`, ...batch);
 			sql.exec(`DELETE FROM api_keys WHERE api_key IN (${placeholders})`, ...batch);
 		}
 
@@ -161,14 +149,16 @@ export async function handleApiKeysCheck(request: Request, sql: DurableObjectSto
 
 		// Build a map of api_key → { type, base_url, model } from providers
 		const keyProviderRows = sql.exec(`
-			SELECT k.api_key, p.type, p.name, p.base_url, k.model
+			SELECT k.api_key, p.type, p.name, p.base_url, GROUP_CONCAT(m.model) as models
 			FROM api_keys k
 			JOIN providers p ON p.id = k.provider_id
+			LEFT JOIN key_models m ON m.api_key = k.api_key
 			WHERE p.enabled = 1
+			GROUP BY k.api_key, p.type, p.name, p.base_url
 		`).raw<any>();
-		const providerMap = new Map<string, { type: string; name: string; baseUrl: string; model: string }>();
+		const providerMap = new Map<string, { type: string; name: string; baseUrl: string; models: string }>();
 		for (const row of Array.from(keyProviderRows)) {
-			providerMap.set(row[0] as string, { type: row[1] as string, name: row[2] as string, baseUrl: row[3] as string, model: row[4] as string });
+			providerMap.set(row[0] as string, { type: row[1] as string, name: row[2] as string, baseUrl: row[3] as string, models: row[4] || '' });
 		}
 
 		const checkResults = await Promise.all(
@@ -178,8 +168,8 @@ export async function handleApiKeysCheck(request: Request, sql: DurableObjectSto
 					const providerType = provider?.type || 'gemini';
 					const providerName = provider?.name || '';
 					const baseUrl = (provider?.baseUrl || BASE_URL).replace(/\/+$/, '');
-					const modelList = (provider?.model || '').split(',').map(m => m.trim()).filter(Boolean);
-					const model = modelList[Math.floor(Math.random() * modelList.length)] || '';
+					const modelList = (provider?.models || '').split(',').filter(Boolean);
+					const model = modelList.length > 0 ? modelList[Math.floor(Math.random() * modelList.length)] : '';
 
 					let response: Response;
 					if (providerType === 'gemini') {
@@ -240,15 +230,15 @@ export async function getAllApiKeys(request: Request, sql: DurableObjectStorage[
 		const total = totalArray.length > 0 ? totalArray[0][0] : 0;
 
 		const results = sql
-			.exec(`SELECT api_key, key_group, provider_id, model, health_check_enabled, enabled, in_default_rotation
+			.exec(`SELECT api_key, key_group, provider_id, health_check_enabled, enabled, in_default_rotation
 				   FROM api_keys
 				   LIMIT ? OFFSET ?`, pageSize, offset)
 			.raw<any>();
 		const keys = results
 			? Array.from(results).map((row: any) => ({
 					api_key: row[0], key_group: row[1], provider_id: row[2],
-					model: row[3] || '', health_check_enabled: row[4] === 1, enabled: row[5] === 1,
-					in_default_rotation: row[6] === 1,
+					health_check_enabled: row[3] === 1, enabled: row[4] === 1,
+					in_default_rotation: row[5] === 1,
 			  }))
 			: [];
 
@@ -256,6 +246,53 @@ export async function getAllApiKeys(request: Request, sql: DurableObjectStorage[
 	} catch (error: any) {
 		console.error('获取API密钥失败:', error);
 		return jsonResponse({ error: error.message || '内部服务器错误' }, 500);
+	}
+}
+
+// ─── Models ───
+
+export async function handleGetModels(sql: DurableObjectStorage['sql']): Promise<Response> {
+	try {
+		const rows = Array.from(sql.exec(`
+			SELECT m.model, GROUP_CONCAT(m.api_key) as keys
+			FROM key_models m
+			GROUP BY m.model
+			ORDER BY MIN(m.created_at)
+		`).raw<any>());
+		const models = rows.map((row: any) => ({
+			model: row[0],
+			keys: row[1] ? row[1].split(',') : [],
+		}));
+		return jsonResponse({ models });
+	} catch (error: any) {
+		return jsonResponse({ error: error.message }, 500);
+	}
+}
+
+export async function handleUpsertModel(request: Request, sql: DurableObjectStorage['sql']): Promise<Response> {
+	try {
+		const { model, keys } = (await request.json()) as { model?: string; keys?: string[] };
+		if (!model) return jsonResponse({ error: 'model 是必填项' }, 400);
+		if (!Array.isArray(keys) || keys.length === 0) return jsonResponse({ error: '至少选择一个密钥' }, 400);
+
+		sql.exec('DELETE FROM key_models WHERE model = ?', model);
+		for (const apiKey of keys) {
+			sql.exec('INSERT INTO key_models (id, model, api_key) VALUES (?, ?, ?)', crypto.randomUUID(), model, apiKey);
+		}
+		return jsonResponse({ message: `模型 "${model}" 已绑定 ${keys.length} 个密钥。` });
+	} catch (error: any) {
+		return jsonResponse({ error: error.message }, 500);
+	}
+}
+
+export async function handleDeleteModel(request: Request, sql: DurableObjectStorage['sql']): Promise<Response> {
+	try {
+		const { model } = (await request.json()) as { model?: string };
+		if (!model) return jsonResponse({ error: 'model 是必填项' }, 400);
+		sql.exec('DELETE FROM key_models WHERE model = ?', model);
+		return jsonResponse({ message: `模型 "${model}" 已删除。` });
+	} catch (error: any) {
+		return jsonResponse({ error: error.message }, 500);
 	}
 }
 
@@ -314,14 +351,18 @@ export async function handleBackup(sql: DurableObjectStorage['sql']): Promise<Re
 		).map((r: any) => ({ id: r[0], type: r[1], name: r[2], base_url: r[3], enabled: r[4] === 1, config_json: r[5], in_default_rotation: r[6] === 1 }));
 
 		const keys = Array.from(
-			sql.exec('SELECT k.provider_id, k.model, k.api_key, k.enabled, k.health_check_enabled, k.in_default_rotation FROM api_keys k ORDER BY created_at').raw<any>()
-		).map((r: any) => ({ provider_id: r[0], model: r[1], api_key: r[2], enabled: r[3] === 1, health_check_enabled: r[4] === 1, in_default_rotation: r[5] === 1 }));
+			sql.exec('SELECT k.provider_id, k.api_key, k.enabled, k.health_check_enabled, k.in_default_rotation FROM api_keys k ORDER BY created_at').raw<any>()
+		).map((r: any) => ({ provider_id: r[0], api_key: r[1], enabled: r[2] === 1, health_check_enabled: r[3] === 1, in_default_rotation: r[4] === 1 }));
+
+		const models = Array.from(
+			sql.exec('SELECT model, api_key FROM key_models ORDER BY created_at').raw<any>()
+		).map((r: any) => ({ model: r[0], api_key: r[1] }));
 
 		const endpoints = Array.from(
 			sql.exec('SELECT id, path, provider_id, enabled FROM endpoints ORDER BY created_at').raw<any>()
 		).map((r: any) => ({ id: r[0], path: r[1], provider_id: r[2], enabled: r[3] === 1 }));
 
-		return jsonResponse({ version: 1, providers, keys, endpoints, exported_at: new Date().toISOString() });
+		return jsonResponse({ version: 2, providers, keys, models, endpoints, exported_at: new Date().toISOString() });
 	} catch (error: any) {
 		return jsonResponse({ error: error.message }, 500);
 	}
@@ -334,6 +375,7 @@ export async function handleRestore(request: Request, sql: DurableObjectStorage[
 			return jsonResponse({ error: '格式无效：需要 providers, keys, endpoints 数组' }, 400);
 		}
 
+		sql.exec('DELETE FROM key_models');
 		sql.exec('DELETE FROM api_keys');
 		sql.exec('DELETE FROM providers');
 		sql.exec('DELETE FROM endpoints');
@@ -350,9 +392,16 @@ export async function handleRestore(request: Request, sql: DurableObjectStorage[
 			if (!k.api_key) continue;
 			const keyId = crypto.randomUUID();
 			sql.exec(
-				'INSERT INTO api_keys (id, provider_id, model, api_key, enabled, health_check_enabled, in_default_rotation) VALUES (?, ?, ?, ?, ?, ?, ?)',
-				keyId, k.provider_id ?? '', k.model ?? '', k.api_key, k.enabled !== false ? 1 : 0, k.health_check_enabled !== false ? 1 : 0, k.in_default_rotation ? 1 : 0
+				'INSERT INTO api_keys (id, provider_id, api_key, enabled, health_check_enabled, in_default_rotation) VALUES (?, ?, ?, ?, ?, ?)',
+				keyId, k.provider_id ?? '', k.api_key, k.enabled !== false ? 1 : 0, k.health_check_enabled !== false ? 1 : 0, k.in_default_rotation ? 1 : 0
 			);
+		}
+
+		if (Array.isArray(data.models)) {
+			for (const m of data.models) {
+				if (!m.model || !m.api_key) continue;
+				sql.exec('INSERT INTO key_models (id, model, api_key) VALUES (?, ?, ?)', crypto.randomUUID(), m.model, m.api_key);
+			}
 		}
 
 		for (const ep of data.endpoints) {
@@ -363,7 +412,7 @@ export async function handleRestore(request: Request, sql: DurableObjectStorage[
 			);
 		}
 
-		return jsonResponse({ message: '恢复成功。', providers: data.providers.length, keys: data.keys.length, endpoints: data.endpoints.length });
+		return jsonResponse({ message: '恢复成功。', providers: data.providers.length, keys: data.keys.length, models: data.models?.length ?? 0, endpoints: data.endpoints.length });
 	} catch (error: any) {
 		return jsonResponse({ error: error.message }, 500);
 	}

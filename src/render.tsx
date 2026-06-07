@@ -160,6 +160,7 @@ export const Render = ({ isAuthenticated, showWarning }: { isAuthenticated: bool
 					<nav id="topnav-links">
 						<a href="#" data-page="providers" class="active">Provider</a>
 						<a href="#" data-page="keys">密钥</a>
+						<a href="#" data-page="models">模型</a>
 						<a href="#" data-page="endpoints">端点</a>
 					</nav>
 					<div style="margin-left:auto;display:flex;gap:4px;">
@@ -243,13 +244,6 @@ export const Render = ({ isAuthenticated, showWarning }: { isAuthenticated: bool
 											<option value="" disabled selected>请选择 Provider</option>
 										</select>
 									</div>
-									<div class="form-field">
-										<label>Model 名称</label>
-										<div class="tag-input" id="ak-model-tags">
-											<input type="text" id="ak-model-input" placeholder="输入模型名称，按回车添加" />
-										</div>
-										<input type="hidden" id="ak-model" required />
-									</div>
 								</div>
 								<textarea id="api-keys" style="height: 80px" placeholder="请输入API密钥，每行一个"></textarea>
 								<div class="form-actions">
@@ -273,7 +267,6 @@ export const Render = ({ isAuthenticated, showWarning }: { isAuthenticated: bool
 											<th><input type="checkbox" id="select-all-keys" /></th>
 											<th>API 密钥</th>
 											<th>Provider</th>
-											<th>Model</th>
 											<th>状态</th>
 											<th>启用</th>
 											<th>轮询</th>
@@ -301,6 +294,47 @@ export const Render = ({ isAuthenticated, showWarning }: { isAuthenticated: bool
 										</div>
 									</div>
 								</div>
+							</div>
+						</div>
+					</div>
+
+					{/* Models Page */}
+					<div id="page-models" class="page hidden">
+						<div class="section">
+							<div class="section-title">添加模型</div>
+							<form id="model-form">
+								<div class="form-row">
+									<div class="form-field">
+										<label>Model 名称</label>
+										<input type="text" id="mf-model" placeholder="如 claude-3-5-sonnet, gpt-4o" required />
+									</div>
+								</div>
+								<div class="form-field" style="margin-bottom:12px;">
+									<label>绑定密钥（必选，可多选）</label>
+									<div id="mf-keys-list" style="max-height:150px;overflow-y:auto;border:1px solid #d4d4d4;padding:8px;background:#fff;"></div>
+								</div>
+								<div class="form-actions">
+									<button type="submit" class="btn btn-primary" id="model-submit-btn">保存</button>
+									<button type="button" class="btn hidden" id="cancel-model-btn">取消</button>
+								</div>
+							</form>
+						</div>
+						<div class="section">
+							<div class="toolbar">
+								<div class="toolbar-title">已配置的模型</div>
+								<button id="refresh-models" class="btn btn-sm">刷新</button>
+							</div>
+							<div class="table-wrap">
+								<table id="models-table">
+									<thead>
+										<tr>
+											<th>Model</th>
+											<th>绑定的密钥</th>
+											<th>操作</th>
+										</tr>
+									</thead>
+									<tbody></tbody>
+								</table>
 							</div>
 						</div>
 					</div>
@@ -386,6 +420,7 @@ document.addEventListener('DOMContentLoaded', () => {
 			navLinks.forEach(l => l.classList.toggle('active', l === link));
 			if (link.dataset.page === 'providers') loadProviders();
 			if (link.dataset.page === 'keys') loadKeys();
+			if (link.dataset.page === 'models') loadModels();
 			if (link.dataset.page === 'endpoints') loadEndpoints();
 		});
 	});
@@ -481,14 +516,14 @@ document.addEventListener('DOMContentLoaded', () => {
 	let totalPages = 1;
 
 	async function loadKeys() {
-		keysTableBody.innerHTML = '<tr class="empty-row"><td colspan="9">加载中...</td></tr>';
+		keysTableBody.innerHTML = '<tr class="empty-row"><td colspan="8">加载中...</td></tr>';
 		try {
 			const resp = await fetch('/api/keys?page=' + currentPage + '&pageSize=' + pageSize);
 			const { keys, total } = await resp.json();
 			totalPages = Math.ceil(total / pageSize);
 			keysTableBody.innerHTML = '';
 			if (keys.length === 0) {
-				keysTableBody.innerHTML = '<tr class="empty-row"><td colspan="9">暂无密钥</td></tr>';
+				keysTableBody.innerHTML = '<tr class="empty-row"><td colspan="8">暂无密钥</td></tr>';
 			} else {
 				keys.forEach(k => {
 					const tr = document.createElement('tr');
@@ -498,12 +533,11 @@ document.addEventListener('DOMContentLoaded', () => {
 						'<td><input type="checkbox" class="key-cb" data-key="' + safeKey + '" data-hce="' + (k.health_check_enabled ? '1' : '0') + '" /></td>' +
 						'<td class="mono"><span class="key-display" data-full="' + safeKey + '" data-masked="' + maskedKey + '">' + maskedKey + '</span><button class="eye-btn" title="显示/隐藏">👁</button></td>' +
 						'<td class="text-muted">' + E(k.provider_id) + '</td>' +
-						'<td>' + (k.model ? k.model.split(',').map(m => '<span class="tag">' + E(m.trim()) + '</span>').join(' ') : '<span class="text-muted">-</span>') + '</td>' +
 						'<td>' + (k.key_group === 'normal' ? '<span class="status-ok">正常</span>' : '<span class="status-err">' + E(k.key_group) + '</span>') + '</td>' +
 						'<td>' + (k.enabled ? '<span class="status-ok">是</span>' : '<span class="status-err">否</span>') + '</td>' +
 						'<td>' + (k.in_default_rotation ? '<span class="status-ok">是</span>' : '<span class="status-err">否</span>') + '</td>' +
 						'<td class="text-muted">' + (k.health_check_enabled ? '是' : '否') + '</td>' +
-						'<td><button class="btn btn-sm edit-key" data-key="' + safeKey + '" data-provider="' + E(k.provider_id) + '" data-model="' + E(k.model || '') + '" data-hce="' + (k.health_check_enabled ? '1' : '0') + '" data-rotation="' + (k.in_default_rotation ? '1' : '0') + '">编辑</button></td>';
+						'<td><button class="btn btn-sm edit-key" data-key="' + safeKey + '" data-provider="' + E(k.provider_id) + '" data-hce="' + (k.health_check_enabled ? '1' : '0') + '" data-rotation="' + (k.in_default_rotation ? '1' : '0') + '">编辑</button></td>';
 					keysTableBody.appendChild(tr);
 				});
 			}
@@ -556,49 +590,6 @@ document.addEventListener('DOMContentLoaded', () => {
 	});
 	document.addEventListener('click', () => document.getElementById('more-actions-menu').classList.remove('open'));
 
-	// Tag input for models
-	const modelTags = document.getElementById('ak-model-tags');
-	const modelInput = document.getElementById('ak-model-input');
-	const modelHidden = document.getElementById('ak-model');
-	function syncModelTags() {
-		const tags = modelTags.querySelectorAll('.tag');
-		modelHidden.value = Array.from(tags).map(t => t.dataset.value).join(',');
-		modelHidden.dispatchEvent(new Event('input'));
-	}
-	function addModelTag(value) {
-		const parts = value.split(/[,，]+/).map(s => s.trim()).filter(Boolean);
-		const existing = Array.from(modelTags.querySelectorAll('.tag')).map(t => t.dataset.value);
-		for (const part of parts) {
-			if (existing.includes(part)) continue;
-			const tag = document.createElement('span');
-			tag.className = 'tag';
-			tag.dataset.value = part;
-			tag.innerHTML = E(part) + '<span class="tag-remove">×</span>';
-			tag.querySelector('.tag-remove').addEventListener('click', () => { tag.remove(); syncModelTags(); });
-			tag.addEventListener('dblclick', () => {
-				modelInput.value = tag.dataset.value;
-				tag.remove();
-				syncModelTags();
-				modelInput.focus();
-			});
-			modelTags.insertBefore(tag, modelInput);
-		}
-		modelInput.value = '';
-		syncModelTags();
-	}
-	modelInput.addEventListener('keydown', (e) => {
-		if (e.key === 'Enter' || e.key === ',') {
-			e.preventDefault();
-			addModelTag(modelInput.value);
-		}
-		if (e.key === 'Backspace' && !modelInput.value) {
-			const tags = modelTags.querySelectorAll('.tag');
-			if (tags.length) { tags[tags.length - 1].remove(); syncModelTags(); }
-		}
-	});
-	modelInput.addEventListener('blur', () => { if (modelInput.value) addModelTag(modelInput.value); });
-	modelTags.addEventListener('click', () => modelInput.focus());
-
 	async function toggleSelectedKeys(enabled) {
 		const keys = Array.from(document.querySelectorAll('.key-cb:checked')).map(cb => cb.dataset.key);
 		if (!keys.length) return;
@@ -618,42 +609,37 @@ document.addEventListener('DOMContentLoaded', () => {
 	document.getElementById('add-keys-form').addEventListener('submit', async (e) => {
 		e.preventDefault();
 		const provider_id = document.getElementById('ak-provider').value;
-		const model = document.getElementById('ak-model').value.trim();
 		const health_check_enabled = document.getElementById('ak-health-check').checked;
 		const in_default_rotation = document.getElementById('ak-rotation').checked;
 
 		if (editingKey) {
-			const resp = await fetch('/api/keys', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ api_key: editingKey, provider_id, model, health_check_enabled, in_default_rotation }) });
+			const resp = await fetch('/api/keys', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ api_key: editingKey, provider_id, health_check_enabled, in_default_rotation }) });
 			const result = await resp.json();
 			if (resp.ok) { toast(result.message); cancelEdit(); loadKeys(); }
 			else toast('更新失败: ' + (result.error || ''), true);
 		} else {
 			const keys = document.getElementById('api-keys').value.split('\\n').map(k => k.trim()).filter(Boolean);
 			if (!keys.length) { toast('请输入至少一个密钥', true); return; }
-			const resp = await fetch('/api/keys', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ keys, provider_id, model, health_check_enabled, in_default_rotation }) });
+			const resp = await fetch('/api/keys', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ keys, provider_id, health_check_enabled, in_default_rotation }) });
 			const result = await resp.json();
-			if (resp.ok) { toast(result.message); document.getElementById('api-keys').value = ''; modelTags.querySelectorAll('.tag').forEach(t => t.remove()); modelHidden.value = ''; loadKeys(); }
+			if (resp.ok) { toast(result.message); document.getElementById('api-keys').value = ''; loadKeys(); }
 			else toast('添加失败: ' + (result.error || ''), true);
 		}
 	});
 
-	function startEdit(key, provider, model, hce, rotation) {
+	function startEdit(key, provider, hce, rotation) {
 		editingKey = key;
 		document.getElementById('ak-provider').value = provider;
-		modelTags.querySelectorAll('.tag').forEach(t => t.remove());
-		model.split(',').forEach(m => { if (m.trim()) addModelTag(m.trim()); });
 		document.getElementById('ak-health-check').checked = hce === '1';
 		document.getElementById('ak-rotation').checked = rotation === '1';
 		document.getElementById('api-keys').disabled = true;
-		document.getElementById('api-keys').placeholder = '编辑模式：修改上方属性后点击保存';
+		document.getElementById('api-keys').placeholder = '编辑模式：修改属性后点击保存';
 		submitBtn.textContent = '保存修改';
 		cancelBtn.classList.remove('hidden');
 	}
 
 	function cancelEdit() {
 		editingKey = null;
-		modelTags.querySelectorAll('.tag').forEach(t => t.remove());
-		modelHidden.value = '';
 		document.getElementById('api-keys').disabled = false;
 		document.getElementById('api-keys').placeholder = '请输入API密钥，每行一个';
 		submitBtn.textContent = '添加密钥';
@@ -665,7 +651,7 @@ document.addEventListener('DOMContentLoaded', () => {
 	keysTableBody.addEventListener('click', (e) => {
 		const btn = e.target.closest('.edit-key');
 		if (btn) {
-			startEdit(btn.dataset.key, btn.dataset.provider, btn.dataset.model, btn.dataset.hce, btn.dataset.rotation);
+			startEdit(btn.dataset.key, btn.dataset.provider, btn.dataset.hce, btn.dataset.rotation);
 			window.scrollTo({ top: 0, behavior: 'smooth' });
 		}
 	});
@@ -752,6 +738,86 @@ document.addEventListener('DOMContentLoaded', () => {
 
 	document.getElementById('refresh-endpoints').addEventListener('click', loadEndpoints);
 
+	// ─── Models ───
+	const modelForm = document.getElementById('model-form');
+	const modelsTableBody = document.querySelector('#models-table tbody');
+	let editingModel = null;
+
+	async function loadModels() {
+		try {
+			const resp = await fetch('/api/models');
+			const { models } = await resp.json();
+			modelsTableBody.innerHTML = '';
+			if (models.length === 0) {
+				modelsTableBody.innerHTML = '<tr class="empty-row"><td colspan="3">暂无模型</td></tr>';
+				return;
+			}
+			models.forEach(m => {
+				const tr = document.createElement('tr');
+				tr.innerHTML =
+					'<td class="mono">' + E(m.model) + '</td>' +
+					'<td>' + (m.keys.length ? m.keys.map(k => '<span class="tag">' + E(k.length > 12 ? k.slice(0, 6) + '···' + k.slice(-4) : k) + '</span>').join(' ') : '<span class="text-muted">无</span>') + '</td>' +
+					'<td>' +
+						'<button class="btn btn-sm edit-model" data-model="' + E(m.model) + '" data-keys="' + E(m.keys.join(',')) + '">编辑</button> ' +
+						'<button class="btn btn-sm btn-danger del-model" data-model="' + E(m.model) + '">删除</button>' +
+					'</td>';
+				modelsTableBody.appendChild(tr);
+			});
+		} catch (e) { console.error('loadModels:', e); }
+	}
+
+	async function loadModelKeysList(selectedKeys) {
+		const container = document.getElementById('mf-keys-list');
+		try {
+			const resp = await fetch('/api/keys?page=1&pageSize=9999');
+			const { keys } = await resp.json();
+			container.innerHTML = '';
+			if (!keys.length) { container.innerHTML = '<div class="text-muted">暂无密钥，请先添加密钥</div>'; return; }
+			keys.forEach(k => {
+				const label = document.createElement('label');
+				label.className = 'checkbox-label';
+				const masked = k.api_key.length > 12 ? k.api_key.slice(0, 6) + '···' + k.api_key.slice(-4) : k.api_key;
+				const checked = selectedKeys && selectedKeys.includes(k.api_key) ? 'checked' : '';
+				label.innerHTML = '<input type="checkbox" class="model-key-cb" value="' + E(k.api_key) + '" ' + checked + '/> ' + E(masked) + ' <span class="text-muted">(' + E(k.provider_id) + ')</span>';
+				container.appendChild(label);
+			});
+		} catch (e) { container.innerHTML = '<div class="text-muted">加载失败</div>'; }
+	}
+
+	modelForm.addEventListener('submit', async (e) => {
+		e.preventDefault();
+		const model = document.getElementById('mf-model').value.trim();
+		const keys = Array.from(document.querySelectorAll('.model-key-cb:checked')).map(cb => cb.value);
+		if (!model) { toast('请输入模型名称', true); return; }
+		if (!keys.length) { toast('请至少选择一个密钥', true); return; }
+		try {
+			const resp = await fetch('/api/models', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ model, keys }) });
+			const result = await resp.json();
+			if (resp.ok) { toast(result.message); modelForm.reset(); editingModel = null; loadModels(); }
+			else toast('保存失败: ' + (result.error || ''), true);
+		} catch (err) { toast('请求失败', true); }
+	});
+
+	modelsTableBody.addEventListener('click', async (e) => {
+		const btn = e.target.closest('button');
+		if (!btn) return;
+		if (btn.classList.contains('del-model')) {
+			if (!confirm('确定删除模型 "' + btn.dataset.model + '"？')) return;
+			await fetch('/api/models', { method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ model: btn.dataset.model }) });
+			loadModels();
+		}
+		if (btn.classList.contains('edit-model')) {
+			editingModel = btn.dataset.model;
+			document.getElementById('mf-model').value = btn.dataset.model;
+			const keys = btn.dataset.keys ? btn.dataset.keys.split(',') : [];
+			await loadModelKeysList(keys);
+			window.scrollTo({ top: 0, behavior: 'smooth' });
+		}
+	});
+
+	document.getElementById('refresh-models').addEventListener('click', loadModels);
+	loadModelKeysList(null);
+
 	// ─── Backup / Restore ───
 	document.getElementById('export-btn').addEventListener('click', async () => {
 		try {
@@ -777,7 +843,7 @@ document.addEventListener('DOMContentLoaded', () => {
 			const data = JSON.parse(text);
 			const resp = await fetch('/api/backup/restore', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) });
 			const result = await resp.json();
-			if (resp.ok) { toast('导入成功：' + result.providers + ' 个 Provider，' + result.keys + ' 个密钥，' + result.endpoints + ' 个端点'); loadProviders(); loadKeys(); loadEndpoints(); }
+			if (resp.ok) { toast('导入成功：' + result.providers + ' 个 Provider，' + result.keys + ' 个密钥，' + (result.models || 0) + ' 个模型，' + result.endpoints + ' 个端点'); loadProviders(); loadKeys(); loadModels(); loadEndpoints(); }
 			else toast('导入失败: ' + (result.error || ''), true);
 		} catch (err) { toast('文件解析失败', true); }
 		e.target.value = '';

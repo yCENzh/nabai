@@ -18,7 +18,6 @@ export class ConfigManager {
 			CREATE TABLE IF NOT EXISTS api_keys (
 				id TEXT PRIMARY KEY,
 				provider_id TEXT NOT NULL,
-				model TEXT NOT NULL DEFAULT '',
 				api_key TEXT NOT NULL UNIQUE,
 				enabled INTEGER NOT NULL DEFAULT 1,
 				health_check_enabled INTEGER NOT NULL DEFAULT 1,
@@ -26,6 +25,14 @@ export class ConfigManager {
 				in_default_rotation INTEGER NOT NULL DEFAULT 0,
 				created_at INTEGER NOT NULL DEFAULT (unixepoch()),
 				FOREIGN KEY(provider_id) REFERENCES providers(id)
+			);
+
+			CREATE TABLE IF NOT EXISTS key_models (
+				id TEXT PRIMARY KEY,
+				model TEXT NOT NULL,
+				api_key TEXT NOT NULL,
+				created_at INTEGER NOT NULL DEFAULT (unixepoch()),
+				UNIQUE(model, api_key)
 			);
 
 			CREATE TABLE IF NOT EXISTS endpoints (

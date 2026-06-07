@@ -34,13 +34,11 @@ async function checkKey(
 	apiKey: string,
 	providerType: string,
 	baseUrl: string,
-	models: string,
+	model: string,
 	providerName?: string
 ): Promise<boolean> {
 	try {
 		const cleanUrl = baseUrl.replace(/\/+$/, '');
-		const modelList = models.split(',').map(m => m.trim()).filter(Boolean);
-		const model = modelList[Math.floor(Math.random() * modelList.length)] || '';
 
 		let resp: Response;
 		if (providerType === 'gemini') {
@@ -75,9 +73,10 @@ async function checkKey(
 
 export async function runHealthCheck(sql: DurableObjectStorage['sql']) {
 	const rows = Array.from(sql.exec(`
-		SELECT k.api_key, p.type, p.name, p.base_url, k.model
+		SELECT k.api_key, p.type, p.name, p.base_url, m.model
 		FROM api_keys k
 		JOIN providers p ON p.id = k.provider_id
+		JOIN key_models m ON m.api_key = k.api_key
 		WHERE k.key_group = 'abnormal' AND k.health_check_enabled = 1 AND k.enabled = 1 AND p.enabled = 1
 	`).raw<any>());
 

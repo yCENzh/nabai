@@ -10,6 +10,7 @@ import {
 	handleApiKeys, handleUpdateApiKey, handleDeleteApiKeys, handleToggleApiKeys, handleApiKeysCheck, getAllApiKeys,
 	handleGetProviders, handleUpsertProvider, handleDeleteProvider,
 	handleGetEndpoints, handleUpsertEndpoint, handleDeleteEndpoint,
+	handleGetModels, handleUpsertModel, handleDeleteModel,
 	handleBackup, handleRestore,
 } from './routes/admin';
 
@@ -83,6 +84,11 @@ export class LoadBalancer extends DurableObject {
 			if (pathname === '/api/endpoints' && request.method === 'GET') return handleGetEndpoints(this.ctx.storage.sql);
 			if (pathname === '/api/endpoints' && request.method === 'POST') return handleUpsertEndpoint(request, this.ctx.storage.sql);
 			if (pathname === '/api/endpoints' && request.method === 'DELETE') return handleDeleteEndpoint(request, this.ctx.storage.sql);
+
+			// Models
+			if (pathname === '/api/models' && request.method === 'GET') return handleGetModels(this.ctx.storage.sql);
+			if (pathname === '/api/models' && request.method === 'POST') return handleUpsertModel(request, this.ctx.storage.sql);
+			if (pathname === '/api/models' && request.method === 'DELETE') return handleDeleteModel(request, this.ctx.storage.sql);
 
 			// Backup / Restore
 			if (pathname === '/api/backup' && request.method === 'GET') return handleBackup(this.ctx.storage.sql);
