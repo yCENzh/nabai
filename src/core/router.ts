@@ -103,20 +103,3 @@ export async function resolveProvider(sql: DurableObjectStorage['sql'], endpoint
 	console.log(`[rot] key=${maskKey(apiKey)} provider=${provConfig.name}(${provConfig.type})`);
 	return { provider: buildProvider(provConfig), providerName: provConfig.name, forwardClientKey, endpoint, apiKey };
 }
-
-export async function getProviderConfig(
-	sql: DurableObjectStorage['sql'],
-	providerId: string
-): Promise<ProviderConfig | null> {
-	const results = await sql
-		.exec('SELECT id, type, name, base_url, enabled, config_json FROM providers WHERE id = ?', providerId)
-		.raw<any>();
-	const rows = Array.from(results);
-	if (rows.length === 0) return null;
-	const row = rows[0] as any;
-	const config: ProviderConfig = {
-		id: row[0], type: row[1], name: row[2], base_url: row[3],
-		enabled: row[4] === 1, config_json: row[5],
-	};
-	return config.enabled ? config : null;
-}

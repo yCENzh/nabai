@@ -1,14 +1,9 @@
 import { maskKey } from '../core/utils';
 
-export async function getRandomApiKey(sql: DurableObjectStorage['sql'], providerId?: string): Promise<string | null> {
+export async function getRandomApiKey(sql: DurableObjectStorage['sql']): Promise<string | null> {
 	try {
-		const where = providerId
-			? 'WHERE provider_id = ? AND enabled = 1'
-			: 'WHERE enabled = 1';
-		const params = providerId ? [providerId] : [];
-
 		let results = sql
-			.exec(`SELECT api_key FROM api_keys ${where} AND key_group = 'normal' ORDER BY RANDOM() LIMIT 1`, ...params)
+			.exec('SELECT api_key FROM api_keys WHERE enabled = 1 AND key_group = \'normal\' ORDER BY RANDOM() LIMIT 1')
 			.raw<any>();
 		let keys = Array.from(results);
 		if (keys && keys.length > 0) {
@@ -16,7 +11,7 @@ export async function getRandomApiKey(sql: DurableObjectStorage['sql'], provider
 		}
 
 		results = sql
-			.exec(`SELECT api_key FROM api_keys ${where} AND key_group = 'abnormal' ORDER BY RANDOM() LIMIT 1`, ...params)
+			.exec('SELECT api_key FROM api_keys WHERE enabled = 1 AND key_group = \'abnormal\' ORDER BY RANDOM() LIMIT 1')
 			.raw<any>();
 		keys = Array.from(results);
 		if (keys && keys.length > 0) {

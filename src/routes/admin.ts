@@ -38,9 +38,29 @@ export async function handleDeleteProvider(request: Request, sql: DurableObjectS
 	try {
 		const { id } = (await request.json()) as any;
 		if (!id) return jsonResponse({ error: 'id 是必填项' }, 400);
-		sql.exec('DELETE FROM api_keys WHERE provider_id = ?', id);
+
+		// 找出只关联了这个 provider 的密钥
+		const soleKeys = Array.from(sql.exec(`
+			SELECT kp.api_key FROM key_providers kp
+			WHERE kp.provider_id = ?
+			AND (SELECT COUNT(*) FROM key_providers kp2 WHERE kp2.api_key = kp.api_key) = 1
+		`, id).raw<any>()).map((r: any) => r[0]);
+
+		if (soleKeys.length > 0) {
+			// 删除这些密钥及其关联数据
+			const placeholders = soleKeys.map(() => '?').join(',');
+			sql.exec(`DELETE FROM key_models WHERE api_key IN (${placeholders})`, ...soleKeys);
+			sql.exec(`DELETE FROM key_providers WHERE api_key IN (${placeholders})`, ...soleKeys);
+			sql.exec(`DELETE FROM api_keys WHERE api_key IN (${placeholders})`, ...soleKeys);
+		}
+
+		// 删除该 provider 与其他密钥的关联
+		sql.exec('DELETE FROM key_providers WHERE provider_id = ?', id);
 		sql.exec('DELETE FROM providers WHERE id = ?', id);
-		return jsonResponse({ message: 'Provider 及其关联密钥已删除。' });
+		return jsonResponse({
+			message: `Provider 已删除。${soleKeys.length > 0 ? `同时删除了 ${soleKeys.length} 个仅关联此 Provider 的密钥。` : ''}`,
+			deletedKeys: soleKeys.length,
+		});
 	} catch (error: any) {
 		return jsonResponse({ error: error.message }, 500);
 	}

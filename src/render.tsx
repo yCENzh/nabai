@@ -138,6 +138,12 @@ export const Render = ({ isAuthenticated, showWarning }: { isAuthenticated: bool
 					.hidden { display: none !important; }
 					.eye-btn { background: none; border: none; cursor: pointer; padding: 2px; color: #999; font-size: 14px; vertical-align: middle; margin-left: 4px; }
 					.eye-btn:hover { color: #333; }
+					.modal-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,.4); z-index: 200; align-items: center; justify-content: center; }
+					.modal-overlay.open { display: flex; }
+					.modal { background: #fff; padding: 24px; max-width: 400px; width: 90%; }
+					.modal-title { font-size: 15px; font-weight: 600; margin-bottom: 8px; }
+					.modal-body { font-size: 13px; color: #444; margin-bottom: 16px; }
+					.modal-actions { display: flex; gap: 8px; justify-content: flex-end; }
 					.tag-input { display: flex; flex-wrap: wrap; gap: 4px; padding: 5px 8px; border: 1px solid #d4d4d4; background: #fff; min-height: 34px; align-items: center; cursor: text; }
 					.tag-input:focus-within { border-color: #3b82f6; }
 					.tag { display: inline-flex; align-items: center; gap: 2px; padding: 2px 6px; background: #f0f0f0; border-radius: 3px; font-size: 12px; }
@@ -169,6 +175,13 @@ export const Render = ({ isAuthenticated, showWarning }: { isAuthenticated: bool
 					</div>
 				</div>
 				<div class="toast-container" id="toast-container"></div>
+				<div class="modal-overlay" id="confirm-modal">
+					<div class="modal">
+						<div class="modal-title" id="confirm-title"></div>
+						<div class="modal-body" id="confirm-body"></div>
+						<div class="modal-actions" id="confirm-actions"></div>
+					</div>
+				</div>
 				<div class="container">
 
 					{/* Providers Page */}
@@ -389,6 +402,23 @@ function buildClientScript(): string {
 	return `
 const E = (s) => String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
 
+function confirmModal(title, body, buttons) {
+	return new Promise(resolve => {
+		document.getElementById('confirm-title').textContent = title;
+		document.getElementById('confirm-body').textContent = body;
+		const actions = document.getElementById('confirm-actions');
+		actions.innerHTML = '';
+		buttons.forEach(b => {
+			const btn = document.createElement('button');
+			btn.className = 'btn' + (b.primary ? ' btn-primary' : '') + (b.danger ? ' btn-danger' : '');
+			btn.textContent = b.label;
+			btn.addEventListener('click', () => { document.getElementById('confirm-modal').classList.remove('open'); resolve(b.value); });
+			actions.appendChild(btn);
+		});
+		document.getElementById('confirm-modal').classList.add('open');
+	});
+}
+
 function toast(msg, isError) {
 	const c = document.getElementById('toast-container');
 	const el = document.createElement('div');
@@ -483,9 +513,36 @@ document.addEventListener('DOMContentLoaded', () => {
 		const btn = e.target.closest('button');
 		if (!btn) return;
 		if (btn.classList.contains('del-provider')) {
-			if (!confirm('确定删除此 Provider 及其关联密钥？')) return;
-			await fetch('/api/providers', { method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: btn.dataset.id }) });
-			loadProviders();
+			const action = await confirmModal(
+				'删除 Provider',
+				'确定删除此 Provider？仅关联此 Provider 的密钥将一并删除，关联了多个 Provider 的密钥不受影响。',
+				[
+					{ label: '取消', value: 'cancel' },
+					{ label: '导出密钥后删除', value: 'export', primary: true },
+					{ label: '直接删除', value: 'delete', danger: true },
+				]
+			);
+			if (action === 'cancel') return;
+			if (action === 'export') {
+				const keysResp = await fetch('/api/keys?page=1&pageSize=9999');
+				const { keys } = await keysResp.json();
+				const providerKeys = keys.filter(k => (k.provider_ids || []).includes(btn.dataset.id) && k.provider_ids.length === 1);
+				if (providerKeys.length > 0) {
+					const exportText = providerKeys.map(k => k.api_key).join('\n');
+					await navigator.clipboard.writeText(exportText);
+					const blob = new Blob([exportText], { type: 'text/plain' });
+					const a = document.createElement('a');
+					a.href = URL.createObjectURL(blob);
+					a.download = 'nabai-keys-' + btn.dataset.id + '.txt';
+					a.click();
+					URL.revokeObjectURL(a.href);
+					toast('已导出 ' + providerKeys.length + ' 个密钥到剪贴板和文件');
+				}
+			}
+			const resp = await fetch('/api/providers', { method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: btn.dataset.id }) });
+			const result = await resp.json();
+			if (resp.ok) { toast(result.message); loadProviders(); loadKeys(); }
+			else toast('删除失败: ' + (result.error || ''), true);
 		}
 		if (btn.classList.contains('edit-provider')) {
 			document.getElementById('pf-id').value = btn.dataset.id;
