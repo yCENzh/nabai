@@ -952,5 +952,5 @@ function confirmModal(title, body, buttons) {
 	// Initial load
 	loadProviders();
 });
-`;
+`.replace(/\r/g, '');
 }
