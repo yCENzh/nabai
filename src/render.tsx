@@ -164,10 +164,10 @@ export const Render = ({ isAuthenticated, showWarning }: { isAuthenticated: bool
 				<div class="topnav">
 					<div class="topnav-title">纳百川</div>
 					<nav id="topnav-links">
-						<a href="#" data-page="providers" class="active">Provider</a>
-						<a href="#" data-page="keys">密钥</a>
-						<a href="#" data-page="models">模型</a>
-						<a href="#" data-page="endpoints">端点</a>
+						<a href="javascript:void(0)" data-page="providers" class="active">Provider</a>
+						<a href="javascript:void(0)" data-page="keys">密钥</a>
+						<a href="javascript:void(0)" data-page="models">模型</a>
+						<a href="javascript:void(0)" data-page="endpoints">端点</a>
 					</nav>
 					<div style="margin-left:auto;display:flex;gap:4px;">
 						<button class="btn btn-sm" id="export-btn">导出备份</button>
@@ -542,7 +542,7 @@ function confirmModal(title, body, buttons) {
 				const { keys } = await keysResp.json();
 				const providerKeys = keys.filter(k => (k.provider_ids || []).includes(btn.dataset.id) && k.provider_ids.length === 1);
 				if (providerKeys.length > 0) {
-					const exportText = providerKeys.map(k => k.api_key).join('\n');
+					const exportText = providerKeys.map(k => k.api_key).join('\\n');
 					await navigator.clipboard.writeText(exportText);
 					const blob = new Blob([exportText], { type: 'text/plain' });
 					const a = document.createElement('a');
