@@ -406,6 +406,7 @@ const E = (s) => String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>
 
 function toast(msg, isError) {
 	const c = document.getElementById('toast-container');
+	if (!c) return;
 	const el = document.createElement('div');
 	el.className = 'toast' + (isError ? ' toast-error' : '');
 	el.textContent = msg;
@@ -462,13 +463,17 @@ function confirmModal(title, body, buttons) {
 			if (provList) {
 				const currentChecked = Array.from(provList.querySelectorAll('.ak-prov-cb:checked')).map(cb => cb.value);
 				provList.innerHTML = '';
-				providers.forEach(p => {
-					const label = document.createElement('label');
-					label.className = 'checkbox-label';
-					const checked = currentChecked.includes(p.id) ? 'checked' : '';
-					label.innerHTML = '<input type="checkbox" class="ak-prov-cb" value="' + E(p.id) + '" ' + checked + '/> ' + E(p.name) + ' <span class="text-muted">(' + E(p.type) + ')</span>';
-					provList.appendChild(label);
-				});
+				if (providers.length === 0) {
+					provList.innerHTML = '<div class="text-muted">暂无 Provider，请先添加</div>';
+				} else {
+					providers.forEach(p => {
+						const label = document.createElement('label');
+						label.className = 'checkbox-label';
+						const checked = currentChecked.includes(p.id) ? 'checked' : '';
+						label.innerHTML = '<input type="checkbox" class="ak-prov-cb" value="' + E(p.id) + '" ' + checked + '/> ' + E(p.name) + ' <span class="text-muted">(' + E(p.type) + ')</span>';
+						provList.appendChild(label);
+					});
+				}
 			}
 
 			if (providers.length === 0) {
@@ -489,7 +494,7 @@ function confirmModal(title, body, buttons) {
 					'</td>';
 				providersTableBody.appendChild(tr);
 			});
-		} catch (e) { console.error('loadProviders:', e); }
+		} catch (e) { console.error('loadProviders:', e); providersTableBody.innerHTML = '<tr class="empty-row"><td colspan="6">加载失败</td></tr>'; }
 	}
 
 	providerForm.addEventListener('submit', async (e) => {
@@ -609,7 +614,7 @@ function confirmModal(title, body, buttons) {
 			document.getElementById('prev-page-btn').disabled = currentPage <= 1;
 			document.getElementById('next-page-btn').disabled = currentPage >= totalPages;
 			updateDelBtn();
-		} catch (e) { console.error('loadKeys:', e); }
+		} catch (e) { console.error('loadKeys:', e); keysTableBody.innerHTML = '<tr class="empty-row"><td colspan="7">加载失败</td></tr>'; }
 	}
 
 	function updateDelBtn() {
@@ -627,7 +632,12 @@ function confirmModal(title, body, buttons) {
 	});
 	document.getElementById('delete-selected-keys-btn').addEventListener('click', async () => {
 		const keys = Array.from(document.querySelectorAll('.key-cb:checked')).map(cb => cb.dataset.key);
-		if (!keys.length || !confirm('确定删除 ' + keys.length + ' 个密钥？')) return;
+		if (!keys.length) return;
+		const ok = await confirmModal('删除密钥', '确定删除 ' + keys.length + ' 个密钥？', [
+			{ label: '取消', value: false },
+			{ label: '确定删除', value: true, danger: true },
+		]);
+		if (!ok) return;
 		await fetch('/api/keys', { method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ keys }) });
 		loadKeys();
 	});
@@ -736,6 +746,7 @@ function confirmModal(title, body, buttons) {
 
 	async function loadEndpoints() {
 		try {
+			loadEndpointModelsList(null);
 			const resp = await fetch('/api/endpoints');
 			const { endpoints } = await resp.json();
 			endpointsTableBody.innerHTML = '';
@@ -763,7 +774,7 @@ function confirmModal(title, body, buttons) {
 					'</td>';
 				endpointsTableBody.appendChild(tr);
 			});
-		} catch (e) { console.error('loadEndpoints:', e); }
+		} catch (e) { console.error('loadEndpoints:', e); endpointsTableBody.innerHTML = '<tr class="empty-row"><td colspan="5">加载失败</td></tr>'; }
 	}
 
 	endpointForm.addEventListener('submit', async (e) => {
@@ -801,7 +812,11 @@ function confirmModal(title, body, buttons) {
 		const btn = e.target.closest('button');
 		if (!btn) return;
 		if (btn.classList.contains('del-endpoint')) {
-			if (!confirm('确定删除此端点？')) return;
+			const ok = await confirmModal('删除端点', '确定删除此端点？', [
+				{ label: '取消', value: false },
+				{ label: '确定删除', value: true, danger: true },
+			]);
+			if (!ok) return;
 			await fetch('/api/endpoints', { method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: btn.dataset.id }) });
 			loadEndpoints();
 		}
@@ -836,7 +851,6 @@ function confirmModal(title, body, buttons) {
 			});
 		} catch (e) { container.innerHTML = '<div class="text-muted">加载失败</div>'; }
 	}
-	loadEndpointModelsList(null);
 
 	// ─── Models ───
 	const modelForm = document.getElementById('model-form');
@@ -845,6 +859,7 @@ function confirmModal(title, body, buttons) {
 
 	async function loadModels() {
 		try {
+			loadModelKeysList(null);
 			const resp = await fetch('/api/models');
 			const { models } = await resp.json();
 			modelsTableBody.innerHTML = '';
@@ -863,7 +878,7 @@ function confirmModal(title, body, buttons) {
 					'</td>';
 				modelsTableBody.appendChild(tr);
 			});
-		} catch (e) { console.error('loadModels:', e); }
+		} catch (e) { console.error('loadModels:', e); modelsTableBody.innerHTML = '<tr class="empty-row"><td colspan="3">加载失败</td></tr>'; }
 	}
 
 	async function loadModelKeysList(selectedKeys) {
@@ -902,7 +917,11 @@ function confirmModal(title, body, buttons) {
 		const btn = e.target.closest('button');
 		if (!btn) return;
 		if (btn.classList.contains('del-model')) {
-			if (!confirm('确定删除模型 "' + btn.dataset.model + '"？')) return;
+			const ok = await confirmModal('删除模型', '确定删除模型 "' + btn.dataset.model + '"？', [
+				{ label: '取消', value: false },
+				{ label: '确定删除', value: true, danger: true },
+			]);
+			if (!ok) return;
 			await fetch('/api/models', { method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ model: btn.dataset.model }) });
 			loadModels();
 		}
@@ -916,7 +935,6 @@ function confirmModal(title, body, buttons) {
 	});
 
 	document.getElementById('refresh-models').addEventListener('click', loadModels);
-	loadModelKeysList(null);
 
 	// ─── Backup / Restore ───
 	document.getElementById('export-btn').addEventListener('click', async () => {
@@ -937,7 +955,11 @@ function confirmModal(title, body, buttons) {
 	document.getElementById('import-file').addEventListener('change', async (e) => {
 		const file = e.target.files[0];
 		if (!file) return;
-		if (!confirm('导入将覆盖当前所有数据，确定继续？')) { e.target.value = ''; return; }
+		const ok = await confirmModal('导入数据', '导入将覆盖当前所有数据，确定继续？', [
+			{ label: '取消', value: false },
+			{ label: '确定导入', value: true, danger: true },
+		]);
+		if (!ok) { e.target.value = ''; return; }
 		try {
 			const text = await file.text();
 			const data = JSON.parse(text);
