@@ -5,23 +5,6 @@ import { parseStream, parseStreamFlush, toOpenAiStream, toOpenAiStreamFlush } fr
 
 const adapter = new OpenAIProtocolAdapter();
 
-export function extractClientApiKey(request: Request, url: URL): string | null {
-	if (url.searchParams.has('key')) {
-		const key = url.searchParams.get('key');
-		if (key) return key;
-	}
-
-	const googApiKey = request.headers.get('x-goog-api-key');
-	if (googApiKey) return googApiKey;
-
-	const authHeader = request.headers.get('Authorization');
-	if (authHeader && authHeader.startsWith('Bearer ')) {
-		return authHeader.substring(7);
-	}
-
-	return null;
-}
-
 async function handleEmbeddings(req: any, apiKey: string, baseUrl: string, providerType: string) {
 	if (typeof req.model !== 'string') {
 		throw new HttpError('model is not specified', 400);

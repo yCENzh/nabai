@@ -4,7 +4,7 @@ import { LoadBalancer } from './handler';
 import { getAuthKey } from './auth';
 import { getCookie, setCookie } from 'hono/cookie';
 import { extractEndpointId, stripEndpointPrefix } from './core/router';
-import { handleOpenAI, extractClientApiKey as extractGeminiClientKey } from './routes/proxy';
+import { handleOpenAI } from './routes/proxy';
 import { handleAnthropicMessages } from './routes/anthropic';
 import { GeminiProvider } from './providers/gemini';
 import { OpenAICompatProvider } from './providers/openai-compat';
@@ -34,40 +34,6 @@ async function resolveConfig(stub: DurableObjectStub, endpointId: string, model?
 	return { data: await resp.json(), status: resp.status };
 }
 
-async function forwardGemini(
-	url: URL,
-	request: Request,
-	apiKey: string | null,
-	stub: DurableObjectStub
-): Promise<Response> {
-	const headers = new Headers();
-	if (request.headers.has('content-type')) {
-		headers.set('content-type', request.headers.get('content-type')!);
-	}
-	if (apiKey) {
-		url.searchParams.set('key', apiKey);
-		headers.set('x-goog-api-key', apiKey);
-	}
-	const response = await fetch(url.toString(), {
-		method: request.method,
-		headers,
-		body: request.method === 'GET' || request.method === 'HEAD' ? null : request.body,
-	});
-	if (response.status === 429 && apiKey) {
-		stub.fetch(new Request('http://do/__mark-abnormal', {
-			method: 'POST',
-			body: JSON.stringify({ apiKey }),
-		})).catch(() => {});
-	}
-	const responseHeaders = new Headers(response.headers);
-	responseHeaders.set('Access-Control-Allow-Origin', '*');
-	responseHeaders.delete('transfer-encoding');
-	responseHeaders.delete('connection');
-	responseHeaders.delete('keep-alive');
-	responseHeaders.delete('content-encoding');
-	responseHeaders.set('Referrer-Policy', 'no-referrer');
-	return new Response(response.body, { status: response.status, headers: responseHeaders });
-}
 
 app.get('/', (c) => {
 	const sessionKey = getCookie(c, 'auth-key');
@@ -102,14 +68,14 @@ app.all('*', async (c) => {
 	const url = new URL(c.req.raw.url);
 	let pathname = url.pathname;
 
-	// Admin API â†’ DO stub
+	// Admin API â†?DO stub
 	if (pathname.startsWith('/api/')) {
 		const stub = getDOStub(c);
 		const resp = await stub.fetch(c.req.raw);
 		return new Response(resp.body, { status: resp.status, headers: resp.headers });
 	}
 
-	// Proxy routes â€” resolve config via DO, forward upstream from Worker
+	// Proxy routes â€?resolve config via DO, forward upstream from Worker
 	let endpointId: string;
 	if (pathname.startsWith('/v1/')) {
 		endpointId = 'default';
@@ -162,7 +128,7 @@ app.all('*', async (c) => {
 		return handleAnthropicMessages(request, { apiKey: clientKey, provider: buildProvider(cfg.providerType, cfg.baseUrl), providerName: cfg.providerName });
 	}
 
-	// OpenAI routes (chat completions, embeddings â€” need model binding)
+	// OpenAI routes (chat completions, embeddings â€?need model binding)
 	if (pathname.endsWith('/chat/completions') || pathname.endsWith('/completions') ||
 		pathname.endsWith('/embeddings')) {
 		let model: string | undefined;
@@ -202,38 +168,6 @@ app.all('*', async (c) => {
 		return handleOpenAI(request, { apiKey: clientKey, provider: buildProvider(cfg.providerType, cfg.baseUrl), providerName: cfg.providerName, baseUrl: cfg.baseUrl, providerType: cfg.providerType });
 	}
 
-	// Gemini proxy (everything else)
-	const geminiUrl = new URL(`https://generativelanguage.googleapis.com${pathname}${url.search}`);
-
-	let isAuthorized = false;
-	if (c.env.AUTH_KEY) {
-		if (geminiUrl.searchParams.get('key') === c.env.AUTH_KEY) isAuthorized = true;
-		if (!isAuthorized && request.headers.get('x-goog-api-key') === c.env.AUTH_KEY) isAuthorized = true;
-		if (!isAuthorized) {
-			return new Response('Unauthorized', { status: 401, headers: { 'Access-Control-Allow-Origin': '*' } });
-		}
-	}
-
-	// Resolve API key for Gemini
-	if (isAuthorized || !c.env.AUTH_KEY) {
-		const clientKey = extractGeminiClientKey(request, geminiUrl);
-		if (isAuthorized || !clientKey) {
-			const keyResp = await stub.fetch(new Request('http://do/__resolve-key', { method: 'POST' }));
-			const keyData = await keyResp.json() as any;
-			if (keyData.apiKey) {
-				return forwardGemini(geminiUrl, request, keyData.apiKey, stub);
-			}
-			if (isAuthorized) {
-				return new Response('No API keys configured.', { status: 500 });
-			}
-		}
-		if (clientKey) {
-			return forwardGemini(geminiUrl, request, clientKey, stub);
-		}
-		return new Response('No API keys configured.', { status: 500 });
-	}
-
-	return forwardGemini(geminiUrl, request, null, stub);
 });
 
 type Env = {
