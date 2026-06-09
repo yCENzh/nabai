@@ -384,6 +384,7 @@ export async function handleDeleteEndpoint(request: Request, sql: DurableObjectS
 	try {
 		const { id } = (await request.json()) as any;
 		if (!id) return jsonResponse({ error: 'id 是必填项' }, 400);
+		if (id === 'default') return jsonResponse({ error: '默认端点不可删除' }, 400);
 		sql.exec('DELETE FROM endpoint_models WHERE endpoint_id = ?', id);
 		sql.exec('DELETE FROM endpoints WHERE id = ?', id);
 		return jsonResponse({ message: '端点已删除。' });

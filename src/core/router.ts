@@ -4,6 +4,13 @@ import { GeminiProvider } from '../providers/gemini';
 import { OpenAICompatProvider } from '../providers/openai-compat';
 import { AnthropicProvider } from '../providers/anthropic';
 
+const resolveCache = new Map<string, { result: ResolvedProvider; ts: number }>();
+const CACHE_TTL = 30_000;
+
+export function clearResolveCache() {
+	resolveCache.clear();
+}
+
 export function extractEndpointId(pathname: string): string | null {
 	const match = pathname.match(/^\/e\/([^/]+)\//);
 	return match ? match[1] : null;
@@ -43,6 +50,12 @@ function buildProvider(provConfig: ProviderConfig): Provider {
 }
 
 export async function resolveProvider(sql: DurableObjectStorage['sql'], endpointId: string, model?: string): Promise<ResolvedProvider> {
+	const cacheKey = `${endpointId}:${model ?? ''}`;
+	const cached = resolveCache.get(cacheKey);
+	if (cached && Date.now() - cached.ts < CACHE_TTL) {
+		return cached.result;
+	}
+
 	const epRows = Array.from(sql.exec(
 		'SELECT id, path, enabled FROM endpoints WHERE id = ?', endpointId
 	).raw<any>());
@@ -101,5 +114,7 @@ export async function resolveProvider(sql: DurableObjectStorage['sql'], endpoint
 	let forwardClientKey = false;
 	try { forwardClientKey = JSON.parse(provConfig.config_json).forward_client_key === true; } catch {}
 	console.log(`[rot] key=${maskKey(apiKey)} provider=${provConfig.name}(${provConfig.type})`);
-	return { provider: buildProvider(provConfig), providerName: provConfig.name, forwardClientKey, endpoint, apiKey };
+	const result: ResolvedProvider = { provider: buildProvider(provConfig), providerName: provConfig.name, forwardClientKey, endpoint, apiKey };
+	resolveCache.set(cacheKey, { result, ts: Date.now() });
+	return result;
 }

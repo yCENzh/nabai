@@ -55,5 +55,7 @@ export class ConfigManager {
 				updated_at INTEGER NOT NULL DEFAULT (unixepoch())
 			);
 		`);
+
+		this.sql.exec("INSERT OR IGNORE INTO endpoints (id, path, enabled) VALUES ('default', '/v1', 1)");
 	}
 }

@@ -1,7 +1,7 @@
 import { DurableObject } from 'cloudflare:workers';
 import { isAdminAuthenticated } from './auth';
 import { fixCors } from './core/utils';
-import { extractEndpointId, stripEndpointPrefix } from './core/router';
+import { extractEndpointId, stripEndpointPrefix, clearResolveCache } from './core/router';
 import { ConfigManager } from './durable/config-manager';
 import { runHealthCheck } from './pool/key-pool';
 import { handleOpenAI, handleGeminiProxy } from './routes/proxy';
@@ -65,6 +65,11 @@ export class LoadBalancer extends DurableObject {
 					status: 401,
 					headers: fixCors({ headers: { 'Content-Type': 'application/json' } }).headers,
 				});
+			}
+
+			// Invalidate resolveProvider cache on write operations
+			if (['POST', 'PUT', 'DELETE', 'PATCH'].includes(request.method)) {
+				clearResolveCache();
 			}
 
 			// Keys

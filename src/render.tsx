@@ -750,33 +750,27 @@ function confirmModal(title, body, buttons) {
 	const endpointForm = document.getElementById('endpoint-form');
 	const endpointsTableBody = document.querySelector('#endpoints-table tbody');
 
-	async function loadEndpoints() {
+		async function loadEndpoints() {
 		try {
 			loadEndpointModelsList(null);
 			const resp = await fetch('/api/endpoints');
 			const { endpoints } = await resp.json();
 			endpointsTableBody.innerHTML = '';
 
-			const defaultTr = document.createElement('tr');
-			defaultTr.innerHTML =
-				'<td class="mono">default</td>' +
-				'<td>/v1</td>' +
-				'<td class="text-muted">轮询池</td>' +
-				'<td><span class="status-ok">启用</span></td>' +
-				'<td class="text-muted">系统内置</td>';
-			endpointsTableBody.appendChild(defaultTr);
-
-			if (endpoints.length === 0) return;
 			endpoints.forEach(ep => {
 				const tr = document.createElement('tr');
+				const modelsHtml = (ep.models || []).length
+					? (ep.models || []).map(m => '<span class="tag">' + E(m) + '</span>').join(' ')
+					: '<span class="text-muted">无</span>';
+				const pathDisplay = ep.id === 'default' ? '/v1' : '/e/' + E(ep.id);
 			tr.innerHTML =
 					'<td class="mono">' + E(ep.id) + '</td>' +
-					'<td class="mono">/e/' + E(ep.id) + '</td>' +
-					'<td>' + (ep.models || []).map(m => '<span class="tag">' + E(m) + '</span>').join(' ') + '</td>' +
+					'<td class="mono">' + pathDisplay + '</td>' +
+					'<td>' + modelsHtml + '</td>' +
 					'<td>' + (ep.enabled ? '<span class="status-ok">启用</span>' : '<span class="status-err">禁用</span>') + '</td>' +
 					'<td>' +
 						'<button class="btn btn-sm edit-endpoint" data-id="' + E(ep.id) + '" data-path="' + E(ep.path) + '" data-models="' + E((ep.models || []).join(',')) + '" data-enabled="' + (ep.enabled ? '1' : '0') + '">编辑</button> ' +
-						'<button class="btn btn-sm btn-danger del-endpoint" data-id="' + E(ep.id) + '">删除</button>' +
+						(ep.id === 'default' ? '' : '<button class="btn btn-sm btn-danger del-endpoint" data-id="' + E(ep.id) + '">删除</button>') +
 					'</td>';
 				endpointsTableBody.appendChild(tr);
 			});
@@ -790,7 +784,7 @@ function confirmModal(title, body, buttons) {
 		const models = Array.from(document.querySelectorAll('.ef-model-cb:checked')).map(cb => cb.value);
 		const data = {
 			id: document.getElementById('ef-id').value.trim(),
-			path,
+			path: document.getElementById('ef-id').value.trim() === 'default' ? '/v1' : path,
 			models,
 			enabled: document.getElementById('ef-enabled').checked,
 		};
@@ -810,6 +804,7 @@ function confirmModal(title, body, buttons) {
 		document.getElementById('endpoint-submit-btn').textContent = '保存';
 		document.getElementById('cancel-endpoint-btn').classList.add('hidden');
 		document.getElementById('ef-id').disabled = false;
+		document.getElementById('ef-path').disabled = false;
 		document.querySelectorAll('.ef-model-cb').forEach(cb => cb.checked = false);
 	}
 	document.getElementById('cancel-endpoint-btn').addEventListener('click', cancelEndpointEdit);
@@ -831,6 +826,7 @@ function confirmModal(title, body, buttons) {
 			document.getElementById('ef-id').value = btn.dataset.id;
 			document.getElementById('ef-id').disabled = true;
 			document.getElementById('ef-path').value = btn.dataset.path;
+			document.getElementById('ef-path').disabled = btn.dataset.id === 'default';
 			document.getElementById('ef-enabled').checked = btn.dataset.enabled === '1';
 			document.getElementById('endpoint-submit-btn').textContent = '更新';
 			document.getElementById('cancel-endpoint-btn').classList.remove('hidden');
