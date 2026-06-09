@@ -648,7 +648,7 @@ function confirmModal(title, body, buttons) {
 		cbs.forEach(cb => { const tr = cb.closest('tr'); const sc = tr?.querySelector('.status-err, .status-ok'); if (sc) { sc.className = ''; sc.textContent = '检查中...'; } });
 		const resp = await fetch('/api/keys/check', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ keys: keysToCheck }) });
 		const results = await resp.json();
-		const skipped = results.filter((r: any) => r.skipped);
+		const skipped = results.filter((r) => r.skipped);
 		if (skipped.length) toast(skipped.length + ' 个密钥无绑定模型，已跳过检查');
 		loadKeys();
 	});
@@ -659,7 +659,7 @@ function confirmModal(title, body, buttons) {
 		cbs.forEach(cb => { const tr = cb.closest('tr'); const sc = tr?.querySelector('.status-err, .status-ok'); if (sc) { sc.className = ''; sc.textContent = '检查中...'; } });
 		const resp = await fetch('/api/keys/check', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ keys: keysToCheck }) });
 		const results = await resp.json();
-		const skipped = results.filter((r: any) => r.skipped);
+		const skipped = results.filter((r) => r.skipped);
 		if (skipped.length) toast(skipped.length + ' 个密钥无绑定模型，已跳过检查');
 		loadKeys();
 	});
