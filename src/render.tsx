@@ -895,7 +895,7 @@ function confirmModal(title, body, buttons) {
 				label.className = 'checkbox-label';
 				const masked = k.api_key.length > 12 ? k.api_key.slice(0, 6) + '···' + k.api_key.slice(-4) : k.api_key;
 				const checked = selectedKeys && selectedKeys.includes(k.api_key) ? 'checked' : '';
-				label.innerHTML = '<input type="checkbox" class="model-key-cb" value="' + E(k.api_key) + '" ' + checked + '/> ' + E(masked) + ' <span class="text-muted">(' + E(k.provider_id) + ')</span>';
+				label.innerHTML = '<input type="checkbox" class="model-key-cb" value="' + E(k.api_key) + '" ' + checked + '/> ' + E(masked) + ' <span class="text-muted">' + ((k.provider_names || []).length ? '(' + E(k.provider_names.join(', ')) + ')' : '') + '</span>';
 				container.appendChild(label);
 			});
 		} catch (e) { container.innerHTML = '<div class="text-muted">加载失败</div>'; }
