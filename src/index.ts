@@ -25,13 +25,13 @@ function getDOStub(c: any): DurableObjectStub {
 	return c.env.LOAD_BALANCER.get(id, { locationHint: 'wnam' });
 }
 
-async function resolveConfig(stub: DurableObjectStub, endpointId: string, model?: string): Promise<any> {
+async function resolveConfig(stub: DurableObjectStub, endpointId: string, model?: string): Promise<{ data: any; status: number }> {
 	const resp = await stub.fetch(new Request('http://do/__resolve', {
 		method: 'POST',
 		headers: { 'Content-Type': 'application/json' },
 		body: JSON.stringify({ endpointId, model }),
 	}));
-	return resp.json();
+	return { data: await resp.json(), status: resp.status };
 }
 
 async function forwardGemini(
@@ -94,6 +94,11 @@ app.get('/favicon.ico', async (c) => {
 });
 
 app.all('*', async (c) => {
+	// OPTIONS preflight
+	if (c.req.method === 'OPTIONS') {
+		return new Response(null, { status: 204, headers: fixCors({}).headers });
+	}
+
 	const url = new URL(c.req.raw.url);
 	let pathname = url.pathname;
 
@@ -127,11 +132,11 @@ app.all('*', async (c) => {
 			model = body?.model;
 		} catch {}
 
-		const cfg = await resolveConfig(stub, endpointId, model);
+		const { data: cfg, status: resolveStatus } = await resolveConfig(stub, endpointId, model);
 		if (cfg.error) {
 			return new Response(JSON.stringify({ error: cfg.error }), {
-				status: 503,
-				headers: { 'Content-Type': 'application/json' },
+				status: resolveStatus,
+				headers: { 'Content-Type': 'application/json', ...fixCors({}).headers },
 			});
 		}
 
@@ -143,7 +148,7 @@ app.all('*', async (c) => {
 			if (!cfg.apiKey) {
 				return new Response(JSON.stringify({ error: 'No API keys configured for this endpoint.' }), {
 					status: 500,
-					headers: { 'Content-Type': 'application/json' },
+					headers: { 'Content-Type': 'application/json', ...fixCors({}).headers },
 				});
 			}
 			return handleAnthropicMessages(request, { apiKey: cfg.apiKey, provider: buildProvider(cfg.providerType, cfg.baseUrl), providerName: cfg.providerName });
@@ -151,15 +156,15 @@ app.all('*', async (c) => {
 		if (!clientKey) {
 			return new Response(JSON.stringify({ error: 'No API key found in the client headers.' }), {
 				status: 400,
-				headers: { 'Content-Type': 'application/json' },
+				headers: { 'Content-Type': 'application/json', ...fixCors({}).headers },
 			});
 		}
 		return handleAnthropicMessages(request, { apiKey: clientKey, provider: buildProvider(cfg.providerType, cfg.baseUrl), providerName: cfg.providerName });
 	}
 
-	// OpenAI routes
+	// OpenAI routes (chat completions, embeddings — need model binding)
 	if (pathname.endsWith('/chat/completions') || pathname.endsWith('/completions') ||
-		pathname.endsWith('/embeddings') || pathname.endsWith('/models')) {
+		pathname.endsWith('/embeddings')) {
 		let model: string | undefined;
 		try {
 			const cloned = request.clone();
@@ -167,11 +172,11 @@ app.all('*', async (c) => {
 			model = body?.model;
 		} catch {}
 
-		const cfg = await resolveConfig(stub, endpointId, model);
+		const { data: cfg, status: resolveStatus } = await resolveConfig(stub, endpointId, model);
 		if (cfg.error) {
 			return new Response(JSON.stringify({ error: cfg.error }), {
-				status: 503,
-				headers: { 'Content-Type': 'application/json' },
+				status: resolveStatus,
+				headers: { 'Content-Type': 'application/json', ...fixCors({}).headers },
 			});
 		}
 
@@ -183,22 +188,22 @@ app.all('*', async (c) => {
 			if (!cfg.apiKey) {
 				return new Response(JSON.stringify({ error: 'No API keys configured for this endpoint.' }), {
 					status: 500,
-					headers: { 'Content-Type': 'application/json' },
+					headers: { 'Content-Type': 'application/json', ...fixCors({}).headers },
 				});
 			}
-			return handleOpenAI(request, { apiKey: cfg.apiKey, provider: buildProvider(cfg.providerType, cfg.baseUrl), providerName: cfg.providerName });
+			return handleOpenAI(request, { apiKey: cfg.apiKey, provider: buildProvider(cfg.providerType, cfg.baseUrl), providerName: cfg.providerName, baseUrl: cfg.baseUrl, providerType: cfg.providerType });
 		}
 		if (!clientKey) {
 			return new Response(JSON.stringify({ error: 'No API key found in the client headers.' }), {
 				status: 400,
-				headers: { 'Content-Type': 'application/json' },
+				headers: { 'Content-Type': 'application/json', ...fixCors({}).headers },
 			});
 		}
-		return handleOpenAI(request, { apiKey: clientKey, provider: buildProvider(cfg.providerType, cfg.baseUrl), providerName: cfg.providerName });
+		return handleOpenAI(request, { apiKey: clientKey, provider: buildProvider(cfg.providerType, cfg.baseUrl), providerName: cfg.providerName, baseUrl: cfg.baseUrl, providerType: cfg.providerType });
 	}
 
 	// Gemini proxy (everything else)
-	const geminiUrl = new URL(`https://generativelanguage.googleapis.com${url.pathname}${url.search}`);
+	const geminiUrl = new URL(`https://generativelanguage.googleapis.com${pathname}${url.search}`);
 
 	let isAuthorized = false;
 	if (c.env.AUTH_KEY) {

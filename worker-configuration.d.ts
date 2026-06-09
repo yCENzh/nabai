@@ -6,7 +6,6 @@ declare namespace Cloudflare {
 		AUTH_KEY: string;
 		LOAD_BALANCER: DurableObjectNamespace<import('./src/handler.ts').LoadBalancer>;
 		HOME_ACCESS_KEY: string;
-		FORWARD_CLIENT_KEY_ENABLED: boolean | string;
 	}
 }
 interface Env extends Cloudflare.Env {}

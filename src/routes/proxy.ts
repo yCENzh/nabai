@@ -1,4 +1,4 @@
-import { HttpError, fixCors, makeHeaders, generateId, BASE_URL, API_VERSION } from '../core/utils';
+import { HttpError, fixCors, makeHeaders, generateId } from '../core/utils';
 import type { Provider } from '../providers/base';
 import { OpenAIProtocolAdapter } from '../protocols/openai';
 import { parseStream, parseStreamFlush, toOpenAiStream, toOpenAiStreamFlush } from '../providers/gemini-stream';
@@ -22,71 +22,56 @@ export function extractClientApiKey(request: Request, url: URL): string | null {
 	return null;
 }
 
-async function handleModels(apiKey: string) {
-	const response = await fetch(`${BASE_URL}/${API_VERSION}/models`, {
-		headers: makeHeaders(apiKey),
-	});
-
-	let responseBody: BodyInit | null = response.body;
-	if (response.ok) {
-		const { models } = JSON.parse(await response.text());
-		responseBody = JSON.stringify(
-			{
-				object: 'list',
-				data: models.map(({ name }: any) => ({
-					id: name.replace('models/', ''),
-					object: 'model',
-					created: 0,
-					owned_by: '',
-				})),
-			},
-			null,
-			'  '
-		);
-	}
-	return new Response(responseBody, fixCors(response));
-}
-
-async function handleEmbeddings(req: any, apiKey: string) {
+async function handleEmbeddings(req: any, apiKey: string, baseUrl: string, providerType: string) {
 	if (typeof req.model !== 'string') {
 		throw new HttpError('model is not specified', 400);
 	}
 
 	const modelName = req.model.startsWith('models/') ? req.model.substring(7) : req.model;
-	const model = 'models/' + modelName;
 
-	const inputs = Array.isArray(req.input) ? req.input : [req.input];
+	if (providerType === 'gemini') {
+		const model = 'models/' + modelName;
+		const inputs = Array.isArray(req.input) ? req.input : [req.input];
 
-	const response = await fetch(`${BASE_URL}/${API_VERSION}/${model}:batchEmbedContents`, {
-		method: 'POST',
-		headers: makeHeaders(apiKey, { 'Content-Type': 'application/json' }),
-		body: JSON.stringify({
-			requests: inputs.map((text: string) => ({
-				model,
-				content: { parts: { text } },
-				outputDimensionality: req.dimensions,
-			})),
-		}),
-	});
-
-	let responseBody: BodyInit | null = response.body;
-	if (response.ok) {
-		const { embeddings } = JSON.parse(await response.text());
-		responseBody = JSON.stringify(
-			{
-				object: 'list',
-				data: embeddings.map(({ values }: any, index: number) => ({
-					object: 'embedding',
-					index,
-					embedding: values,
+		const response = await fetch(`${baseUrl.replace(/\/+$/, '')}/v1beta/${model}:batchEmbedContents`, {
+			method: 'POST',
+			headers: makeHeaders(apiKey, { 'Content-Type': 'application/json' }),
+			body: JSON.stringify({
+				requests: inputs.map((text: string) => ({
+					model,
+					content: { parts: { text } },
+					outputDimensionality: req.dimensions,
 				})),
-				model: modelName,
-			},
-			null,
-			'  '
-		);
+			}),
+		});
+
+		let responseBody: BodyInit | null = response.body;
+		if (response.ok) {
+			const { embeddings } = JSON.parse(await response.text());
+			responseBody = JSON.stringify(
+				{
+					object: 'list',
+					data: embeddings.map(({ values }: any, index: number) => ({
+						object: 'embedding',
+						index,
+						embedding: values,
+					})),
+					model: modelName,
+				},
+				null,
+				'  '
+			);
+		}
+		return new Response(responseBody, fixCors(response));
 	}
-	return new Response(responseBody, fixCors(response));
+
+	// OpenAI-compatible providers: forward as-is with Bearer auth
+	const response = await fetch(`${baseUrl.replace(/\/+$/, '')}/v1/embeddings`, {
+		method: 'POST',
+		headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
+		body: JSON.stringify({ model: modelName, input: req.input, dimensions: req.dimensions }),
+	});
+	return new Response(response.body, fixCors(response));
 }
 
 async function handleCompletions(request: Request, apiKey: string, provider: Provider, providerName: string) {
@@ -170,11 +155,11 @@ async function handleCompletions(request: Request, apiKey: string, provider: Pro
 
 export async function handleOpenAI(
 	request: Request,
-	config: { apiKey: string; provider: Provider; providerName: string }
+	config: { apiKey: string; provider: Provider; providerName: string; baseUrl: string; providerType: string }
 ): Promise<Response> {
 	const url = new URL(request.url);
 	const pathname = url.pathname;
-	const { apiKey, provider, providerName } = config;
+	const { apiKey, provider, providerName, baseUrl, providerType } = config;
 
 	const assert = (success: Boolean) => {
 		if (!success) {
@@ -192,10 +177,7 @@ export async function handleOpenAI(
 			return handleCompletions(request, apiKey, provider, providerName).catch(errHandler);
 		case pathname.endsWith('/embeddings'):
 			assert(request.method === 'POST');
-			return handleEmbeddings(await request.json(), apiKey).catch(errHandler);
-		case pathname.endsWith('/models'):
-			assert(request.method === 'GET');
-			return handleModels(apiKey).catch(errHandler);
+			return handleEmbeddings(await request.json(), apiKey, baseUrl, providerType).catch(errHandler);
 		default:
 			throw new HttpError('404 Not Found', 404);
 	}
