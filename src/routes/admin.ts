@@ -183,7 +183,7 @@ export async function handleApiKeysCheck(request: Request, sql: DurableObjectSto
 			WHERE p.enabled = 1
 			GROUP BY k.api_key, p.type, p.name, p.base_url
 		`).raw<any>();
-		const providerMap = new Map<string, { type: string; name: string; baseUrl: string; models: string }>();
+				const providerMap = new Map<string, { type: string; name: string; baseUrl: string; models: string }>();
 		for (const row of Array.from(keyProviderRows)) {
 			providerMap.set(row[0] as string, { type: row[1] as string, name: row[2] as string, baseUrl: row[3] as string, models: row[4] || '' });
 		}
@@ -197,6 +197,10 @@ export async function handleApiKeysCheck(request: Request, sql: DurableObjectSto
 					const baseUrl = (provider?.baseUrl || BASE_URL).replace(/\/+$/, '');
 					const modelList = (provider?.models || '').split(',').filter(Boolean);
 					const model = modelList.length > 0 ? modelList[Math.floor(Math.random() * modelList.length)] : '';
+
+					if (!model) {
+						return { key, valid: true, skipped: true };
+					}
 
 					let response: Response;
 					if (providerType === 'gemini') {
@@ -231,6 +235,7 @@ export async function handleApiKeysCheck(request: Request, sql: DurableObjectSto
 		);
 
 		for (const result of checkResults) {
+			if (result.skipped) continue;
 			if (result.valid) {
 				sql.exec("UPDATE api_keys SET key_group = 'normal' WHERE api_key = ?", result.key);
 			} else {

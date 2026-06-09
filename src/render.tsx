@@ -899,6 +899,15 @@ function confirmModal(title, body, buttons) {
 		} catch (e) { container.innerHTML = '<div class="text-muted">加载失败</div>'; }
 	}
 
+	function cancelModelEdit() {
+		editingModel = null;
+		modelForm.reset();
+		document.getElementById('model-submit-btn').textContent = '保存';
+		document.getElementById('cancel-model-btn').classList.add('hidden');
+	}
+
+	document.getElementById('cancel-model-btn').addEventListener('click', cancelModelEdit);
+
 	modelForm.addEventListener('submit', async (e) => {
 		e.preventDefault();
 		const model = document.getElementById('mf-model').value.trim();
@@ -908,7 +917,7 @@ function confirmModal(title, body, buttons) {
 		try {
 			const resp = await fetch('/api/models', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ model, keys }) });
 			const result = await resp.json();
-			if (resp.ok) { toast(result.message); modelForm.reset(); editingModel = null; loadModels(); }
+			if (resp.ok) { toast(result.message); cancelModelEdit(); loadModels(); }
 			else toast('保存失败: ' + (result.error || ''), true);
 		} catch (err) { toast('请求失败', true); }
 	});
@@ -928,6 +937,8 @@ function confirmModal(title, body, buttons) {
 		if (btn.classList.contains('edit-model')) {
 			editingModel = btn.dataset.model;
 			document.getElementById('mf-model').value = btn.dataset.model;
+			document.getElementById('model-submit-btn').textContent = '更新';
+			document.getElementById('cancel-model-btn').classList.remove('hidden');
 			const keys = btn.dataset.keys ? btn.dataset.keys.split(',') : [];
 			await loadModelKeysList(keys);
 			window.scrollTo({ top: 0, behavior: 'smooth' });
