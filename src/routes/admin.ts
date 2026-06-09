@@ -234,12 +234,17 @@ export async function handleApiKeysCheck(request: Request, sql: DurableObjectSto
 			})
 		);
 
+		const currentGroups = new Map(
+			Array.from(sql.exec(
+				`SELECT api_key, key_group FROM api_keys WHERE api_key IN (${keys.map(() => '?').join(',')})`,
+				...keys
+			).raw<any>()).map((r: any) => [r[0], r[1]])
+		);
 		for (const result of checkResults) {
 			if (result.skipped) continue;
-			if (result.valid) {
-				sql.exec("UPDATE api_keys SET key_group = 'normal' WHERE api_key = ?", result.key);
-			} else {
-				sql.exec("UPDATE api_keys SET key_group = 'abnormal' WHERE api_key = ?", result.key);
+			const target = result.valid ? 'normal' : 'abnormal';
+			if (currentGroups.get(result.key) !== target) {
+				sql.exec("UPDATE api_keys SET key_group = ? WHERE api_key = ?", target, result.key);
 			}
 		}
 

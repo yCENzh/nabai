@@ -646,7 +646,10 @@ function confirmModal(title, body, buttons) {
 		const keysToCheck = Array.from(cbs).map(cb => cb.dataset.key);
 		if (!keysToCheck.length) { toast('没有启用健康检查的密钥', true); return; }
 		cbs.forEach(cb => { const tr = cb.closest('tr'); const sc = tr?.querySelector('.status-err, .status-ok'); if (sc) { sc.className = ''; sc.textContent = '检查中...'; } });
-		await fetch('/api/keys/check', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ keys: keysToCheck }) });
+		const resp = await fetch('/api/keys/check', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ keys: keysToCheck }) });
+		const results = await resp.json();
+		const skipped = results.filter((r: any) => r.skipped);
+		if (skipped.length) toast(skipped.length + ' 个密钥无绑定模型，已跳过检查');
 		loadKeys();
 	});
 	document.getElementById('check-selected-keys-btn').addEventListener('click', async () => {
@@ -654,7 +657,10 @@ function confirmModal(title, body, buttons) {
 		const keysToCheck = Array.from(cbs).map(cb => cb.dataset.key);
 		if (!keysToCheck.length) return;
 		cbs.forEach(cb => { const tr = cb.closest('tr'); const sc = tr?.querySelector('.status-err, .status-ok'); if (sc) { sc.className = ''; sc.textContent = '检查中...'; } });
-		await fetch('/api/keys/check', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ keys: keysToCheck }) });
+		const resp = await fetch('/api/keys/check', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ keys: keysToCheck }) });
+		const results = await resp.json();
+		const skipped = results.filter((r: any) => r.skipped);
+		if (skipped.length) toast(skipped.length + ' 个密钥无绑定模型，已跳过检查');
 		loadKeys();
 	});
 
