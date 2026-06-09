@@ -38,6 +38,7 @@ export interface ProviderConfig {
 export interface ResolvedProvider {
 	provider: Provider;
 	providerName: string;
+	baseUrl: string;
 	forwardClientKey: boolean;
 	endpoint: EndpointConfig | null;
 	apiKey?: string;
@@ -114,7 +115,7 @@ export async function resolveProvider(sql: DurableObjectStorage['sql'], endpoint
 	let forwardClientKey = false;
 	try { forwardClientKey = JSON.parse(provConfig.config_json).forward_client_key === true; } catch {}
 	console.log(`[rot] key=${maskKey(apiKey)} provider=${provConfig.name}(${provConfig.type})`);
-	const result: ResolvedProvider = { provider: buildProvider(provConfig), providerName: provConfig.name, forwardClientKey, endpoint, apiKey };
+	const result: ResolvedProvider = { provider: buildProvider(provConfig), providerName: provConfig.name, baseUrl: provConfig.base_url, forwardClientKey, endpoint, apiKey };
 	resolveCache.set(cacheKey, { result, ts: Date.now() });
 	return result;
 }

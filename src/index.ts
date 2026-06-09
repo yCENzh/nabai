@@ -3,8 +3,71 @@ import { Render } from './render';
 import { LoadBalancer } from './handler';
 import { getAuthKey } from './auth';
 import { getCookie, setCookie } from 'hono/cookie';
+import { extractEndpointId, stripEndpointPrefix } from './core/router';
+import { handleOpenAI, extractClientApiKey as extractGeminiClientKey } from './routes/proxy';
+import { handleAnthropicMessages } from './routes/anthropic';
+import { GeminiProvider } from './providers/gemini';
+import { OpenAICompatProvider } from './providers/openai-compat';
+import { AnthropicProvider } from './providers/anthropic';
+import type { Provider } from './providers/base';
+import { fixCors } from './core/utils';
 
 const app = new Hono<{ Bindings: Env }>();
+
+function buildProvider(type: string, baseUrl: string): Provider {
+	if (type === 'openai_compat') return new OpenAICompatProvider(baseUrl);
+	if (type === 'anthropic') return new AnthropicProvider(baseUrl);
+	return new GeminiProvider(baseUrl);
+}
+
+function getDOStub(c: any): DurableObjectStub {
+	const id: DurableObjectId = c.env.LOAD_BALANCER.idFromName('loadbalancer');
+	return c.env.LOAD_BALANCER.get(id, { locationHint: 'wnam' });
+}
+
+async function resolveConfig(stub: DurableObjectStub, endpointId: string, model?: string): Promise<any> {
+	const resp = await stub.fetch(new Request('http://do/__resolve', {
+		method: 'POST',
+		headers: { 'Content-Type': 'application/json' },
+		body: JSON.stringify({ endpointId, model }),
+	}));
+	return resp.json();
+}
+
+async function forwardGemini(
+	url: URL,
+	request: Request,
+	apiKey: string | null,
+	stub: DurableObjectStub
+): Promise<Response> {
+	const headers = new Headers();
+	if (request.headers.has('content-type')) {
+		headers.set('content-type', request.headers.get('content-type')!);
+	}
+	if (apiKey) {
+		url.searchParams.set('key', apiKey);
+		headers.set('x-goog-api-key', apiKey);
+	}
+	const response = await fetch(url.toString(), {
+		method: request.method,
+		headers,
+		body: request.method === 'GET' || request.method === 'HEAD' ? null : request.body,
+	});
+	if (response.status === 429 && apiKey) {
+		stub.fetch(new Request('http://do/__mark-abnormal', {
+			method: 'POST',
+			body: JSON.stringify({ apiKey }),
+		})).catch(() => {});
+	}
+	const responseHeaders = new Headers(response.headers);
+	responseHeaders.set('Access-Control-Allow-Origin', '*');
+	responseHeaders.delete('transfer-encoding');
+	responseHeaders.delete('connection');
+	responseHeaders.delete('keep-alive');
+	responseHeaders.delete('content-encoding');
+	responseHeaders.set('Referrer-Policy', 'no-referrer');
+	return new Response(response.body, { status: response.status, headers: responseHeaders });
+}
 
 app.get('/', (c) => {
 	const sessionKey = getCookie(c, 'auth-key');
@@ -31,13 +94,141 @@ app.get('/favicon.ico', async (c) => {
 });
 
 app.all('*', async (c) => {
-	const id: DurableObjectId = c.env.LOAD_BALANCER.idFromName('loadbalancer');
-	const stub = c.env.LOAD_BALANCER.get(id, { locationHint: 'wnam' });
-	const resp = await stub.fetch(c.req.raw);
-	return new Response(resp.body, {
-		status: resp.status,
-		headers: resp.headers,
-	});
+	const url = new URL(c.req.raw.url);
+	let pathname = url.pathname;
+
+	// Admin API → DO stub
+	if (pathname.startsWith('/api/')) {
+		const stub = getDOStub(c);
+		const resp = await stub.fetch(c.req.raw);
+		return new Response(resp.body, { status: resp.status, headers: resp.headers });
+	}
+
+	// Proxy routes — resolve config via DO, forward upstream from Worker
+	let endpointId: string;
+	if (pathname.startsWith('/v1/')) {
+		endpointId = 'default';
+	} else {
+		endpointId = extractEndpointId(pathname) ?? 'default';
+		if (endpointId !== 'default') {
+			pathname = stripEndpointPrefix(pathname);
+		}
+	}
+
+	const request = c.req.raw;
+	const stub = getDOStub(c);
+
+	// Anthropic messages
+	if (pathname.endsWith('/messages') && request.method === 'POST') {
+		let model: string | undefined;
+		try {
+			const cloned = request.clone();
+			const body: any = await cloned.json();
+			model = body?.model;
+		} catch {}
+
+		const cfg = await resolveConfig(stub, endpointId, model);
+		if (cfg.error) {
+			return new Response(JSON.stringify({ error: cfg.error }), {
+				status: 503,
+				headers: { 'Content-Type': 'application/json' },
+			});
+		}
+
+		const clientKey = request.headers.get('x-api-key') ?? request.headers.get('Authorization')?.replace('Bearer ', '') ?? null;
+		if (!cfg.forwardClientKey && c.env.AUTH_KEY) {
+			if (clientKey !== c.env.AUTH_KEY) {
+				return new Response('Unauthorized', { status: 401, headers: fixCors({}).headers });
+			}
+			if (!cfg.apiKey) {
+				return new Response(JSON.stringify({ error: 'No API keys configured for this endpoint.' }), {
+					status: 500,
+					headers: { 'Content-Type': 'application/json' },
+				});
+			}
+			return handleAnthropicMessages(request, { apiKey: cfg.apiKey, provider: buildProvider(cfg.providerType, cfg.baseUrl), providerName: cfg.providerName });
+		}
+		if (!clientKey) {
+			return new Response(JSON.stringify({ error: 'No API key found in the client headers.' }), {
+				status: 400,
+				headers: { 'Content-Type': 'application/json' },
+			});
+		}
+		return handleAnthropicMessages(request, { apiKey: clientKey, provider: buildProvider(cfg.providerType, cfg.baseUrl), providerName: cfg.providerName });
+	}
+
+	// OpenAI routes
+	if (pathname.endsWith('/chat/completions') || pathname.endsWith('/completions') ||
+		pathname.endsWith('/embeddings') || pathname.endsWith('/models')) {
+		let model: string | undefined;
+		try {
+			const cloned = request.clone();
+			const body: any = await cloned.json();
+			model = body?.model;
+		} catch {}
+
+		const cfg = await resolveConfig(stub, endpointId, model);
+		if (cfg.error) {
+			return new Response(JSON.stringify({ error: cfg.error }), {
+				status: 503,
+				headers: { 'Content-Type': 'application/json' },
+			});
+		}
+
+		const clientKey = request.headers.get('Authorization')?.replace('Bearer ', '') ?? null;
+		if (!cfg.forwardClientKey && c.env.AUTH_KEY) {
+			if (clientKey !== c.env.AUTH_KEY) {
+				return new Response('Unauthorized', { status: 401, headers: fixCors({}).headers });
+			}
+			if (!cfg.apiKey) {
+				return new Response(JSON.stringify({ error: 'No API keys configured for this endpoint.' }), {
+					status: 500,
+					headers: { 'Content-Type': 'application/json' },
+				});
+			}
+			return handleOpenAI(request, { apiKey: cfg.apiKey, provider: buildProvider(cfg.providerType, cfg.baseUrl), providerName: cfg.providerName });
+		}
+		if (!clientKey) {
+			return new Response(JSON.stringify({ error: 'No API key found in the client headers.' }), {
+				status: 400,
+				headers: { 'Content-Type': 'application/json' },
+			});
+		}
+		return handleOpenAI(request, { apiKey: clientKey, provider: buildProvider(cfg.providerType, cfg.baseUrl), providerName: cfg.providerName });
+	}
+
+	// Gemini proxy (everything else)
+	const geminiUrl = new URL(`https://generativelanguage.googleapis.com${url.pathname}${url.search}`);
+
+	let isAuthorized = false;
+	if (c.env.AUTH_KEY) {
+		if (geminiUrl.searchParams.get('key') === c.env.AUTH_KEY) isAuthorized = true;
+		if (!isAuthorized && request.headers.get('x-goog-api-key') === c.env.AUTH_KEY) isAuthorized = true;
+		if (!isAuthorized) {
+			return new Response('Unauthorized', { status: 401, headers: { 'Access-Control-Allow-Origin': '*' } });
+		}
+	}
+
+	// Resolve API key for Gemini
+	if (isAuthorized || !c.env.AUTH_KEY) {
+		const clientKey = extractGeminiClientKey(request, geminiUrl);
+		if (isAuthorized || !clientKey) {
+			const keyResp = await stub.fetch(new Request('http://do/__resolve-key', { method: 'POST' }));
+			const keyData = await keyResp.json() as any;
+			if (keyData.apiKey) {
+				return forwardGemini(geminiUrl, request, keyData.apiKey, stub);
+			}
+			if (isAuthorized) {
+				return new Response('No API keys configured.', { status: 500 });
+			}
+		}
+		if (clientKey) {
+			return forwardGemini(geminiUrl, request, clientKey, stub);
+		}
+		return new Response('No API keys configured.', { status: 500 });
+	}
+
+	return forwardGemini(geminiUrl, request, null, stub);
 });
 
 type Env = {

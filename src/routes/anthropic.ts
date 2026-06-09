@@ -1,56 +1,15 @@
 import { HttpError, generateId } from '../core/utils';
+import type { Provider } from '../providers/base';
 import { AnthropicProtocolAdapter } from '../protocols/anthropic';
-import { resolveProvider } from '../core/router';
 
 const anthropicAdapter = new AnthropicProtocolAdapter();
 
 export async function handleAnthropicMessages(
 	request: Request,
-	env: { AUTH_KEY: string },
-	sql: DurableObjectStorage['sql'],
-	endpointId: string = 'default'
+	config: { apiKey: string; provider: Provider; providerName: string }
 ): Promise<Response> {
 	const requestId = 'msg_' + generateId();
-
-	const apiKeyHeader = request.headers.get('x-api-key');
-	const authHeader = request.headers.get('Authorization');
-	let apiKey: string | null = apiKeyHeader || (authHeader?.replace('Bearer ', '') ?? null);
-
-	if (!apiKey) {
-		return anthropicAdapter.renderError(
-			new HttpError('No API key found in the client headers', 401),
-			{ requestId }
-		);
-	}
-
-	let provider, providerName, forwardClientKey, endpoint, resolvedApiKey;
-	let parsedBody: any;
-	try {
-		const cloned = request.clone();
-		parsedBody = await cloned.json();
-	} catch {}
-	try {
-		({ provider, providerName, forwardClientKey, endpoint, apiKey: resolvedApiKey } = await resolveProvider(sql, endpointId, parsedBody?.model));
-	} catch (err: any) {
-		return anthropicAdapter.renderError(err, { requestId });
-	}
-
-	if (!forwardClientKey && env.AUTH_KEY) {
-		if (apiKey !== env.AUTH_KEY) {
-			return anthropicAdapter.renderError(
-				new HttpError('Unauthorized', 401),
-				{ requestId }
-			);
-		}
-		if (resolvedApiKey) {
-			apiKey = resolvedApiKey;
-		} else {
-			return anthropicAdapter.renderError(
-				new HttpError('No API keys configured for this endpoint.', 500),
-				{ requestId }
-			);
-		}
-	}
+	const { apiKey, provider, providerName } = config;
 
 	try {
 		const canonical = await anthropicAdapter.parseRequest(request, { requestId });

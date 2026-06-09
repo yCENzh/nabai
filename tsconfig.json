@@ -38,5 +38,6 @@
 		/* Skip type checking all .d.ts files. */
 		"skipLibCheck": true,
 		"types": ["./worker-configuration.d.ts", "node"]
-	}
+	},
+	"exclude": ["dist/", "node_modules/"]
 }

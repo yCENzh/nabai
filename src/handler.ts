@@ -1,11 +1,9 @@
 import { DurableObject } from 'cloudflare:workers';
 import { isAdminAuthenticated } from './auth';
 import { fixCors } from './core/utils';
-import { extractEndpointId, stripEndpointPrefix, clearResolveCache } from './core/router';
+import { extractEndpointId, stripEndpointPrefix, clearResolveCache, resolveProvider } from './core/router';
 import { ConfigManager } from './durable/config-manager';
-import { runHealthCheck } from './pool/key-pool';
-import { handleOpenAI, handleGeminiProxy } from './routes/proxy';
-import { handleAnthropicMessages } from './routes/anthropic';
+import { runHealthCheck, getRandomApiKey, markKeyAbnormal } from './pool/key-pool';
 import {
 	handleApiKeys, handleUpdateApiKey, handleDeleteApiKeys, handleToggleApiKeys, handleApiKeysCheck, getAllApiKeys,
 	handleGetProviders, handleUpsertProvider, handleDeleteProvider,
@@ -100,22 +98,51 @@ export class LoadBalancer extends DurableObject {
 			if (pathname === '/api/backup/restore' && request.method === 'POST') return handleRestore(request, this.ctx.storage.sql);
 		}
 
-		// Anthropic compatible route
-		if (pathname.endsWith('/v1/messages')) {
-			return handleAnthropicMessages(request, this.env, this.ctx.storage.sql, endpointId);
+		// Internal resolve endpoint (called from Worker)
+		if (pathname === '/__resolve') {
+			try {
+				const body = await request.json() as any;
+				const rp = await resolveProvider(this.ctx.storage.sql, body.endpointId, body.model);
+				return new Response(JSON.stringify({
+					providerType: rp.provider.type,
+					providerName: rp.providerName,
+					baseUrl: rp.baseUrl,
+					forwardClientKey: rp.forwardClientKey,
+					endpoint: rp.endpoint,
+					apiKey: rp.apiKey,
+				}), { headers: { 'Content-Type': 'application/json' } });
+			} catch (err: any) {
+				return new Response(JSON.stringify({ error: err.message }), {
+					status: err.status || 500,
+					headers: { 'Content-Type': 'application/json' },
+				});
+			}
 		}
 
-		// OpenAI compatible routes
-		if (
-			pathname.endsWith('/chat/completions') ||
-			pathname.endsWith('/completions') ||
-			pathname.endsWith('/embeddings') ||
-			pathname.endsWith('/v1/models')
-		) {
-			return handleOpenAI(request, this.env, this.ctx.storage.sql, endpointId);
+		// Internal mark-abnormal endpoint (called from Worker on 429)
+		if (pathname === '/__mark-abnormal' && request.method === 'POST') {
+			try {
+				const { apiKey } = await request.json() as any;
+				await markKeyAbnormal(this.ctx.storage.sql, apiKey);
+				return new Response('ok', { status: 200 });
+			} catch (err: any) {
+				return new Response(err.message, { status: 500, headers: { 'Content-Type': 'application/json' } });
+			}
 		}
 
-		// Direct Gemini proxy
-		return handleGeminiProxy(request, this.env, this.ctx.storage.sql);
+		// Internal resolve-key endpoint for Gemini proxy (called from Worker)
+		if (pathname === '/__resolve-key') {
+			try {
+				const apiKey = await getRandomApiKey(this.ctx.storage.sql);
+				return new Response(JSON.stringify({ apiKey }), { headers: { 'Content-Type': 'application/json' } });
+			} catch (err: any) {
+				return new Response(JSON.stringify({ error: err.message }), {
+					status: err.status || 500,
+					headers: { 'Content-Type': 'application/json' },
+				});
+			}
+		}
+
+		return new Response('Not found', { status: 404 });
 	}
 }
