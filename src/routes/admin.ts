@@ -180,6 +180,7 @@ export async function getAllApiKeys(request: Request, sql: DurableObjectStorage[
 				   LEFT JOIN key_providers kp ON kp.api_key = k.api_key
 				   LEFT JOIN providers p ON p.id = kp.provider_id
 				   GROUP BY k.api_key
+				   ORDER BY k.api_key
 				   LIMIT ? OFFSET ?`, pageSize, offset)
 			.raw<any>();
 		const keys = results
@@ -374,7 +375,7 @@ export async function handleRestore(request: Request, sql: DurableObjectStorage[
 		if (Array.isArray(data.keyModels)) {
 			for (const km of data.keyModels) {
 				if (!km.model || !km.api_key) continue;
-				sql.exec('INSERT INTO key_models (id, model, api_key) VALUES (?, ?, ?)', crypto.randomUUID(), km.model, km.api_key);
+				sql.exec('INSERT OR IGNORE INTO key_models (id, model, api_key) VALUES (?, ?, ?)', crypto.randomUUID(), km.model, km.api_key);
 			}
 		}
 

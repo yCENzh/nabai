@@ -21,7 +21,7 @@ function buildProvider(type: string, baseUrl: string): Provider {
 	return new GeminiProvider(baseUrl);
 }
 
-function getDOStub(c: any): DurableObjectStub {
+function getDOStub(c: { env: Env }): DurableObjectStub {
 	const id: DurableObjectId = c.env.LOAD_BALANCER.idFromName('loadbalancer');
 	return c.env.LOAD_BALANCER.get(id, { locationHint: 'wnam' });
 }
