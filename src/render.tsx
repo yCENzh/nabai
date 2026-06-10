@@ -404,6 +404,17 @@ function buildClientScript(): string {
 	return `
 const E = (s) => String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
 
+function renderTags(items, renderItem, max) {
+	if (!items || items.length === 0) return '<span class="text-muted">无</span>';
+	if (items.length <= max) return items.map(renderItem).join(' ');
+	const visible = items.slice(0, max);
+	const hidden = items.slice(max);
+	return visible.map(renderItem).join(' ') +
+		' <span class="tag tag-more" onclick="var n=this.nextElementSibling;if(n){n.style.display=\'inline\';this.style.display=\'none\'}">+' + hidden.length + '</span>' +
+		' <span class="tag-extra" style="display:none">' + hidden.map(renderItem).join(' ') +
+		' <span class="tag tag-more" onclick="var p=this.parentElement;if(p){p.style.display=\'none\';var s=p.previousElementSibling;if(s)s.style.display=\'inline\'}">收起</span></span>';
+}
+
 function toast(msg, isError) {
 	const c = document.getElementById('toast-container');
 	if (!c) return;
@@ -602,7 +613,7 @@ function confirmModal(title, body, buttons) {
 					tr.innerHTML =
 						'<td><input type="checkbox" class="key-cb" data-key="' + safeKey + '" data-hce="' + (k.health_check_enabled ? '1' : '0') + '" /></td>' +
 						'<td class="mono"><span class="key-display" data-full="' + safeKey + '" data-masked="' + maskedKey + '">' + maskedKey + '</span><button class="eye-btn" title="显示/隐藏">👁</button></td>' +
-						'<td>' + (k.provider_names || []).map(n => '<span class="tag">' + E(n) + '</span>').join(' ') + '</td>' +
+						'<td>' + renderTags(k.provider_names, n => '<span class="tag">' + E(n) + '</span>', 3) + '</td>' +
 						'<td>' + (k.key_group === 'normal' ? '<span class="status-ok">正常</span>' : '<span class="status-err">' + E(k.key_group) + '</span>') + '</td>' +
 						'<td>' + (k.enabled ? '<span class="status-ok">是</span>' : '<span class="status-err">否</span>') + '</td>' +
 						'<td class="text-muted">' + (k.health_check_enabled ? '是' : '否') + '</td>' +
@@ -633,7 +644,7 @@ function confirmModal(title, body, buttons) {
 	document.getElementById('delete-selected-keys-btn').addEventListener('click', async () => {
 		const keys = Array.from(document.querySelectorAll('.key-cb:checked')).map(cb => cb.dataset.key);
 		if (!keys.length) return;
-		const ok = await confirmModal('删除密钥', '确定删除 ' + keys.length + ' 个密钥？', [
+		const ok = await confirmModal('删除密钥', '确定删除 ' + keys.length + ' 个密钥？\n注意：如果这些密钥绑定了模型，模型绑定关系也会被一并删除。', [
 			{ label: '取消', value: false },
 			{ label: '确定删除', value: true, danger: true },
 		]);
@@ -759,9 +770,7 @@ function confirmModal(title, body, buttons) {
 
 			endpoints.forEach(ep => {
 				const tr = document.createElement('tr');
-				const modelsHtml = (ep.models || []).length
-					? (ep.models || []).map(m => '<span class="tag">' + E(m) + '</span>').join(' ')
-					: '<span class="text-muted">无</span>';
+				const modelsHtml = renderTags(ep.models, m => '<span class="tag">' + E(m) + '</span>', 3);
 				const pathDisplay = ep.id === 'default' ? '/v1' : '/e/' + E(ep.id);
 			tr.innerHTML =
 					'<td class="mono">' + E(ep.id) + '</td>' +
@@ -873,7 +882,7 @@ function confirmModal(title, body, buttons) {
 				const tr = document.createElement('tr');
 				tr.innerHTML =
 					'<td class="mono">' + E(m.model) + '</td>' +
-					'<td>' + (m.keys.length ? m.keys.map(k => '<span class="tag">' + E(k.length > 12 ? k.slice(0, 6) + '···' + k.slice(-4) : k) + '</span>').join(' ') : '<span class="text-muted">无</span>') + '</td>' +
+					'<td>' + renderTags(m.keys, k => '<span class="tag">' + E(k.length > 12 ? k.slice(0, 6) + '···' + k.slice(-4) : k) + '</span>', 3) + '</td>' +
 					'<td>' +
 						'<button class="btn btn-sm edit-model" data-model="' + E(m.model) + '" data-keys="' + E(m.keys.join(',')) + '">编辑</button> ' +
 						'<button class="btn btn-sm btn-danger del-model" data-model="' + E(m.model) + '">删除</button>' +
