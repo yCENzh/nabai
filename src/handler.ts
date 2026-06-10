@@ -3,7 +3,7 @@ import { isAdminAuthenticated } from './auth';
 import { fixCors } from './core/utils';
 import { extractEndpointId, stripEndpointPrefix, clearResolveCache, resolveProvider } from './core/router';
 import { ConfigManager } from './durable/config-manager';
-import { runHealthCheck, getRandomApiKey, markKeyAbnormal } from './pool/key-pool';
+import { runHealthCheck, markKeyAbnormal } from './pool/key-pool';
 import {
 	handleApiKeys, handleUpdateApiKey, handleDeleteApiKeys, handleToggleApiKeys, handleApiKeysCheck, getAllApiKeys,
 	handleGetProviders, handleUpsertProvider, handleDeleteProvider,
@@ -130,19 +130,6 @@ export class LoadBalancer extends DurableObject {
 			}
 		}
 
-		// Internal resolve-key endpoint for Gemini proxy (called from Worker)
-		if (pathname === '/__resolve-key') {
-			try {
-				const apiKey = await getRandomApiKey(this.ctx.storage.sql);
-				return new Response(JSON.stringify({ apiKey }), { headers: { 'Content-Type': 'application/json' } });
-			} catch (err: any) {
-				return new Response(JSON.stringify({ error: err.message }), {
-					status: err.status || 500,
-					headers: { 'Content-Type': 'application/json' },
-				});
-			}
-		}
-
-		return new Response('Not found', { status: 404 });
+		return new Response(JSON.stringify({ error: 'Not found' }), { status: 404, headers: { 'Content-Type': 'application/json' } });
 	}
 }

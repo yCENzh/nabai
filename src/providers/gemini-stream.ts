@@ -9,7 +9,9 @@ export function parseStream(this: any, chunk: string, controller: any) {
 		if (line.startsWith('data: ')) {
 			const data = line.substring(6);
 			if (data.startsWith('{')) {
-				controller.enqueue(data);
+				try {
+					controller.enqueue(JSON.parse(data));
+				} catch {}
 			}
 		}
 	}

@@ -140,7 +140,10 @@ export async function parseImg(url: any) {
 				throw new Error(`${response.status} ${response.statusText} (${url})`);
 			}
 			mimeType = response.headers.get('content-type');
-			data = Buffer.from(await response.arrayBuffer()).toString('base64');
+			const buf = new Uint8Array(await response.arrayBuffer());
+			let bin = '';
+			for (let i = 0; i < buf.length; i++) bin += String.fromCharCode(buf[i]);
+			data = btoa(bin);
 		} catch (err) {
 			throw new Error('Error fetching image: ' + (err as Error).message);
 		}

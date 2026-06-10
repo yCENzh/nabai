@@ -1,30 +1,5 @@
 import { maskKey } from '../core/utils';
 
-export async function getRandomApiKey(sql: DurableObjectStorage['sql']): Promise<string | null> {
-	try {
-		let results = sql
-			.exec('SELECT api_key FROM api_keys WHERE enabled = 1 AND key_group = \'normal\' ORDER BY RANDOM() LIMIT 1')
-			.raw<any>();
-		let keys = Array.from(results);
-		if (keys && keys.length > 0) {
-			return keys[0][0] as string;
-		}
-
-		results = sql
-			.exec('SELECT api_key FROM api_keys WHERE enabled = 1 AND key_group = \'abnormal\' ORDER BY RANDOM() LIMIT 1')
-			.raw<any>();
-		keys = Array.from(results);
-		if (keys && keys.length > 0) {
-			return keys[0][0] as string;
-		}
-
-		return null;
-	} catch (error) {
-		console.error('Failed to get random API key:', error);
-		return null;
-	}
-}
-
 async function checkKey(
 	apiKey: string,
 	providerType: string,
