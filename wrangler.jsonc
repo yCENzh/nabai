@@ -25,6 +25,9 @@
 	"observability": {
 		"enabled": true
 	},
+	"triggers": {
+		"crons": ["0 */2 * * *"]
+	},
 	"vars": {
 		"AUTH_KEY": "nabai",
 		"HOME_ACCESS_KEY": "08579ef49716b41562fbfe0b7e15d968cd816421604ee58fb706033ebde4ac14"

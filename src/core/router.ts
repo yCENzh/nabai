@@ -5,7 +5,7 @@ import { OpenAICompatProvider } from '../providers/openai-compat';
 import { AnthropicProvider } from '../providers/anthropic';
 
 const resolveCache = new Map<string, { result: ResolvedProvider; ts: number }>();
-const CACHE_TTL = 30_000;
+const CACHE_TTL = 300_000;
 
 export function clearResolveCache() {
 	resolveCache.clear();

@@ -10,7 +10,8 @@ import { GeminiProvider } from './providers/gemini';
 import { OpenAICompatProvider } from './providers/openai-compat';
 import { AnthropicProvider } from './providers/anthropic';
 import type { Provider } from './providers/base';
-import { fixCors } from './core/utils';
+import { fixCors, maskKey, BASE_URL } from './core/utils';
+import { healthCheckKey } from './pool/key-pool';
 
 const app = new Hono<{ Bindings: Env }>();
 
@@ -68,14 +69,89 @@ app.all('*', async (c) => {
 	const url = new URL(c.req.raw.url);
 	let pathname = url.pathname;
 
-	// Admin API �?DO stub
+	// POST /api/keys/check — handled in Worker (no upstream HTTP from DO)
+	if (pathname === '/api/keys/check' && c.req.method === 'POST') {
+		const userKey = getAuthKey(c.req.raw);
+		if (userKey !== c.env.HOME_ACCESS_KEY) {
+			return new Response(JSON.stringify({ error: 'Unauthorized' }), {
+				status: 401,
+				headers: { 'Content-Type': 'application/json', ...fixCors({}).headers },
+			});
+		}
+		let keys: string[];
+		try {
+			({ keys } = await c.req.json() as { keys: string[] });
+		} catch {
+			return new Response(JSON.stringify({ error: '请求体无效，无法解析JSON。' }), {
+				status: 400,
+				headers: { 'Content-Type': 'application/json', ...fixCors({}).headers },
+			});
+		}
+		if (!Array.isArray(keys) || keys.length === 0) {
+			return new Response(JSON.stringify({ error: '请求体无效，需要一个包含key的非空数组。' }), {
+				status: 400,
+				headers: { 'Content-Type': 'application/json', ...fixCors({}).headers },
+			});
+		}
+
+		const stub = getDOStub(c);
+		const configResp = await stub.fetch(new Request('http://do/__resolve-key-configs', {
+			method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ keys }),
+		}));
+		const { configs, groups } = await configResp.json() as any;
+
+		const providerMap = new Map<string, any>();
+		for (const cfg of configs || []) {
+			if (!providerMap.has(cfg.api_key)) providerMap.set(cfg.api_key, cfg);
+		}
+		const groupMap = new Map<string, string>((groups || []).map((g: any) => [g.api_key, g.key_group]));
+
+		const checkResults = await Promise.all(
+			keys.map(async (key) => {
+				try {
+					const cfg = providerMap.get(key);
+					const providerType = cfg?.providerType || 'gemini';
+					const providerName = cfg?.providerName || '';
+					const baseUrl = (cfg?.baseUrl || BASE_URL).replace(/\/+$/, '');
+					const models: string[] = cfg?.models || [];
+					const model = models.length > 0 ? models[Math.floor(Math.random() * models.length)] : '';
+
+					if (!model) return { key, valid: true, skipped: true };
+
+					const valid = await healthCheckKey(key, providerType, baseUrl, model, providerName);
+					return { key, valid, error: valid ? null : 'Health check failed' };
+				} catch (e: any) {
+					console.log(`[health] ERROR key=${maskKey(key)} error=${e.message}`);
+					return { key, valid: false, error: e.message };
+				}
+			})
+		);
+
+		const updates: Array<{ api_key: string; key_group: string }> = [];
+		for (const r of checkResults) {
+			if (r.skipped) continue;
+			const target = r.valid ? 'normal' : 'abnormal';
+			if (groupMap.get(r.key) !== target) updates.push({ api_key: r.key, key_group: target });
+		}
+		if (updates.length > 0) {
+			await stub.fetch(new Request('http://do/__batch-update-key-group', {
+				method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ updates }),
+			}));
+		}
+
+		return new Response(JSON.stringify(checkResults), {
+			headers: { 'Content-Type': 'application/json', ...fixCors({}).headers },
+		});
+	}
+
+	// Admin API → DO stub
 	if (pathname.startsWith('/api/')) {
 		const stub = getDOStub(c);
 		const resp = await stub.fetch(c.req.raw);
 		return new Response(resp.body, { status: resp.status, headers: resp.headers });
 	}
 
-	// Proxy routes �?resolve config via DO, forward upstream from Worker
+	// Proxy routes → resolve config via DO, forward upstream from Worker
 	let endpointId: string;
 	if (pathname.startsWith('/v1/')) {
 		endpointId = 'default';
@@ -128,7 +204,7 @@ app.all('*', async (c) => {
 		return handleAnthropicMessages(request, { apiKey: clientKey, provider: buildProvider(cfg.providerType, cfg.baseUrl), providerName: cfg.providerName });
 	}
 
-	// OpenAI routes (chat completions, embeddings �?need model binding)
+	// OpenAI routes (chat completions, embeddings → need model binding)
 	if (pathname.endsWith('/chat/completions') || pathname.endsWith('/completions') ||
 		pathname.endsWith('/embeddings')) {
 		let model: string | undefined;
@@ -168,6 +244,7 @@ app.all('*', async (c) => {
 		return handleOpenAI(request, { apiKey: clientKey, provider: buildProvider(cfg.providerType, cfg.baseUrl), providerName: cfg.providerName, baseUrl: cfg.baseUrl, providerType: cfg.providerType });
 	}
 
+	return new Response(JSON.stringify({ error: 'Not found' }), { status: 404, headers: { 'Content-Type': 'application/json', ...fixCors({}).headers } });
 });
 
 type Env = {
@@ -176,8 +253,32 @@ type Env = {
 	HOME_ACCESS_KEY: string;
 };
 
+async function scheduledHandler(controller: ScheduledController, env: Env, ctx: ExecutionContext) {
+	const id: DurableObjectId = env.LOAD_BALANCER.idFromName('loadbalancer');
+	const stub = env.LOAD_BALANCER.get(id, { locationHint: 'wnam' });
+
+	const resp = await stub.fetch(new Request('http://do/__resolve-abnormal-keys'));
+	const { rows } = await resp.json() as any;
+	if (!rows || rows.length === 0) return;
+
+	const updates: Array<{ api_key: string; key_group: string }> = [];
+	for (const row of rows) {
+		const ok = await healthCheckKey(row.apiKey, row.providerType, row.baseUrl, row.model, row.providerName);
+		if (ok) {
+			updates.push({ api_key: row.apiKey, key_group: 'normal' });
+		}
+	}
+
+	if (updates.length > 0) {
+		await stub.fetch(new Request('http://do/__batch-update-key-group', {
+			method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ updates }),
+		}));
+	}
+}
+
 export default {
 	fetch: app.fetch,
+	scheduled: scheduledHandler,
 };
 
 export { LoadBalancer };

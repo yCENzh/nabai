@@ -1,11 +1,11 @@
 import { DurableObject } from 'cloudflare:workers';
 import { isAdminAuthenticated } from './auth';
 import { fixCors } from './core/utils';
-import { extractEndpointId, stripEndpointPrefix, clearResolveCache, resolveProvider } from './core/router';
+import { clearResolveCache, resolveProvider } from './core/router';
 import { ConfigManager } from './durable/config-manager';
-import { runHealthCheck, markKeyAbnormal } from './pool/key-pool';
+import { getAbnormalKeyConfigs, markKeyAbnormal } from './pool/key-pool';
 import {
-	handleApiKeys, handleUpdateApiKey, handleDeleteApiKeys, handleToggleApiKeys, handleApiKeysCheck, getAllApiKeys,
+	handleApiKeys, handleUpdateApiKey, handleDeleteApiKeys, handleToggleApiKeys, getAllApiKeys,
 	handleGetProviders, handleUpsertProvider, handleDeleteProvider,
 	handleGetEndpoints, handleUpsertEndpoint, handleDeleteEndpoint,
 	handleGetModels, handleUpsertModel, handleDeleteModel,
@@ -27,7 +27,6 @@ export class LoadBalancer extends DurableObject {
 	}
 
 	async alarm() {
-		await runHealthCheck(this.ctx.storage.sql);
 		this.ctx.storage.setAlarm(Date.now() + 2 * 60 * 60 * 1000);
 	}
 
@@ -43,17 +42,6 @@ export class LoadBalancer extends DurableObject {
 
 		if (pathname === '/favicon.ico' || pathname === '/robots.txt') {
 			return new Response('', { status: 204 });
-		}
-
-		// /v1 prefix → default endpoint; /e/:id/ prefix → custom endpoint
-		let endpointId: string;
-		if (pathname.startsWith('/v1/')) {
-			endpointId = 'default';
-		} else {
-			endpointId = extractEndpointId(pathname) ?? 'default';
-			if (endpointId !== 'default') {
-				pathname = stripEndpointPrefix(pathname);
-			}
 		}
 
 		// Admin API
@@ -76,7 +64,6 @@ export class LoadBalancer extends DurableObject {
 			if (pathname === '/api/keys' && request.method === 'GET') return getAllApiKeys(request, this.ctx.storage.sql);
 			if (pathname === '/api/keys' && request.method === 'DELETE') return handleDeleteApiKeys(request, this.ctx.storage.sql);
 			if (pathname === '/api/keys' && request.method === 'PATCH') return handleToggleApiKeys(request, this.ctx.storage.sql);
-			if (pathname === '/api/keys/check' && request.method === 'POST') return handleApiKeysCheck(request, this.ctx.storage.sql);
 
 			// Providers
 			if (pathname === '/api/providers' && request.method === 'GET') return handleGetProviders(this.ctx.storage.sql);
@@ -124,6 +111,89 @@ export class LoadBalancer extends DurableObject {
 			try {
 				const { apiKey } = await request.json() as any;
 				await markKeyAbnormal(this.ctx.storage.sql, apiKey);
+				clearResolveCache();
+				return new Response('ok', { status: 200 });
+			} catch (err: any) {
+				return new Response(err.message, { status: 500, headers: { 'Content-Type': 'application/json' } });
+			}
+		}
+
+		// Internal: get configs for abnormal keys (called from Worker cron)
+		if (pathname === '/__resolve-abnormal-keys') {
+			try {
+				const rows = getAbnormalKeyConfigs(this.ctx.storage.sql);
+				return new Response(JSON.stringify({ rows }), { headers: { 'Content-Type': 'application/json' } });
+			} catch (err: any) {
+				return new Response(JSON.stringify({ error: err.message }), {
+					status: err.status || 500,
+					headers: { 'Content-Type': 'application/json' },
+				});
+			}
+		}
+
+		// Internal: get configs for given keys (called from Worker /api/keys/check)
+		if (pathname === '/__resolve-key-configs' && request.method === 'POST') {
+			try {
+				const { keys } = await request.json() as { keys: string[] };
+				const configs: any[] = [];
+				if (keys && keys.length > 0) {
+					const batchSize = 500;
+					for (let i = 0; i < keys.length; i += batchSize) {
+						const batch = keys.slice(i, i + batchSize);
+						const ph = batch.map(() => '?').join(',');
+						for (const row of this.ctx.storage.sql.exec(`
+							SELECT k.api_key, p.type, p.name, p.base_url, GROUP_CONCAT(DISTINCT m.model) as models
+							FROM api_keys k
+							JOIN key_providers kp ON kp.api_key = k.api_key
+							JOIN providers p ON p.id = kp.provider_id
+							LEFT JOIN key_models m ON m.api_key = k.api_key
+							WHERE p.enabled = 1 AND k.api_key IN (${ph})
+							GROUP BY k.api_key, p.type, p.name, p.base_url
+						`, ...batch).raw<any>()) {
+							configs.push({
+								api_key: row[0],
+								providerType: row[1],
+								providerName: row[2],
+								baseUrl: row[3],
+								models: row[4] ? (row[4] as string).split(',') : [],
+							});
+						}
+					}
+				}
+				const groups: Array<{ api_key: string; key_group: string }> = [];
+				const batchSize = 500;
+				for (let i = 0; i < (keys || []).length; i += batchSize) {
+					const batch = keys.slice(i, i + batchSize);
+					const ph = batch.map(() => '?').join(',');
+					for (const r of this.ctx.storage.sql.exec(
+						`SELECT api_key, key_group FROM api_keys WHERE api_key IN (${ph})`, ...batch
+					).raw<any>()) {
+						groups.push({ api_key: r[0] as string, key_group: r[1] as string });
+					}
+				}
+				return new Response(JSON.stringify({ configs, groups }), { headers: { 'Content-Type': 'application/json' } });
+			} catch (err: any) {
+				return new Response(JSON.stringify({ error: err.message }), {
+					status: err.status || 500,
+					headers: { 'Content-Type': 'application/json' },
+				});
+			}
+		}
+
+		// Internal: batch-update key groups (called from Worker)
+		if (pathname === '/__batch-update-key-group' && request.method === 'POST') {
+			try {
+				const { updates } = await request.json() as { updates: Array<{ api_key: string; key_group: string }> };
+				const batchSize = 500;
+				for (let i = 0; i < updates.length; i += batchSize) {
+					const batch = updates.slice(i, i + batchSize);
+					this.ctx.storage.sql.exec(
+						`UPDATE api_keys SET key_group = CASE ${batch.map(() => "WHEN api_key = ? THEN ?").join(' ')} END WHERE api_key IN (${batch.map(() => '?').join(',')})`,
+						...batch.flatMap(u => [u.api_key, u.key_group]),
+						...batch.map(u => u.api_key)
+					);
+				}
+				clearResolveCache();
 				return new Response('ok', { status: 200 });
 			} catch (err: any) {
 				return new Response(err.message, { status: 500, headers: { 'Content-Type': 'application/json' } });

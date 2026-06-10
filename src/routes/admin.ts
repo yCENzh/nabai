@@ -1,5 +1,3 @@
-import { BASE_URL, maskKey } from '../core/utils';
-
 // ─── Providers ───
 
 export async function handleGetProviders(sql: DurableObjectStorage['sql']): Promise<Response> {
@@ -39,7 +37,6 @@ export async function handleDeleteProvider(request: Request, sql: DurableObjectS
 		const { id } = (await request.json()) as any;
 		if (!id) return jsonResponse({ error: 'id 是必填项' }, 400);
 
-		// 找出只关联了这个 provider 的密钥
 		const soleKeys = Array.from(sql.exec(`
 			SELECT kp.api_key FROM key_providers kp
 			WHERE kp.provider_id = ?
@@ -47,14 +44,12 @@ export async function handleDeleteProvider(request: Request, sql: DurableObjectS
 		`, id).raw<any>()).map((r: any) => r[0]);
 
 		if (soleKeys.length > 0) {
-			// 删除这些密钥及其关联数据
 			const placeholders = soleKeys.map(() => '?').join(',');
 			sql.exec(`DELETE FROM key_models WHERE api_key IN (${placeholders})`, ...soleKeys);
 			sql.exec(`DELETE FROM key_providers WHERE api_key IN (${placeholders})`, ...soleKeys);
 			sql.exec(`DELETE FROM api_keys WHERE api_key IN (${placeholders})`, ...soleKeys);
 		}
 
-		// 删除该 provider 与其他密钥的关联
 		sql.exec('DELETE FROM key_providers WHERE provider_id = ?', id);
 		sql.exec('DELETE FROM providers WHERE id = ?', id);
 		return jsonResponse({
@@ -162,95 +157,6 @@ export async function handleToggleApiKeys(request: Request, sql: DurableObjectSt
 		}
 		return jsonResponse({ message: `已${enabled ? '启用' : '禁用'} ${keys.length} 个密钥。` });
 	} catch (error: any) {
-		return jsonResponse({ error: error.message || '内部服务器错误' }, 500);
-	}
-}
-
-export async function handleApiKeysCheck(request: Request, sql: DurableObjectStorage['sql']): Promise<Response> {
-	try {
-		const { keys } = (await request.json()) as { keys: string[] };
-		if (!Array.isArray(keys) || keys.length === 0) {
-			return jsonResponse({ error: '请求体无效，需要一个包含key的非空数组。' }, 400);
-		}
-
-		// Build a map of api_key → { type, base_url, model } from providers
-		const keyProviderRows = sql.exec(`
-			SELECT k.api_key, p.type, p.name, p.base_url, GROUP_CONCAT(m.model) as models
-			FROM api_keys k
-			JOIN key_providers kp ON kp.api_key = k.api_key
-			JOIN providers p ON p.id = kp.provider_id
-			LEFT JOIN key_models m ON m.api_key = k.api_key
-			WHERE p.enabled = 1
-			GROUP BY k.api_key, p.type, p.name, p.base_url
-		`).raw<any>();
-				const providerMap = new Map<string, { type: string; name: string; baseUrl: string; models: string }>();
-		for (const row of Array.from(keyProviderRows)) {
-			providerMap.set(row[0] as string, { type: row[1] as string, name: row[2] as string, baseUrl: row[3] as string, models: row[4] || '' });
-		}
-
-		const checkResults = await Promise.all(
-			keys.map(async (key) => {
-				try {
-					const provider = providerMap.get(key);
-					const providerType = provider?.type || 'gemini';
-					const providerName = provider?.name || '';
-					const baseUrl = (provider?.baseUrl || BASE_URL).replace(/\/+$/, '');
-					const modelList = (provider?.models || '').split(',').filter(Boolean);
-					const model = modelList.length > 0 ? modelList[Math.floor(Math.random() * modelList.length)] : '';
-
-					if (!model) {
-						return { key, valid: true, skipped: true };
-					}
-
-					let response: Response;
-					if (providerType === 'gemini') {
-						response = await fetch(`${baseUrl}/v1beta/models/${model}:generateContent?key=${key}`, {
-							method: 'POST',
-							headers: { 'Content-Type': 'application/json' },
-							body: JSON.stringify({ contents: [{ parts: [{ text: 'hi' }] }] }),
-						});
-					} else if (providerType === 'anthropic') {
-						const body = { model, max_tokens: 1, messages: [{ role: 'user', content: 'hi' }] };
-						response = await fetch(`${baseUrl}/v1/messages`, {
-							method: 'POST',
-							headers: { 'Content-Type': 'application/json', 'x-api-key': key, 'anthropic-version': '2023-06-01' },
-							body: JSON.stringify(body),
-						});
-					} else {
-						response = await fetch(`${baseUrl}/chat/completions`, {
-							method: 'POST',
-							headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${key}` },
-							body: JSON.stringify({ model, max_tokens: 1, messages: [{ role: 'user', content: 'hi' }] }),
-						});
-					}
-					if (!response.ok) {
-						console.log(`[health] FAIL key=${maskKey(key)} provider=${providerName}(${providerType}) model=${model} status=${response.status}`);
-					}
-					return { key, valid: response.ok, error: response.ok ? null : await response.text() };
-				} catch (e: any) {
-					console.log(`[health] ERROR key=${maskKey(key)} error=${e.message}`);
-					return { key, valid: false, error: e.message };
-				}
-			})
-		);
-
-		const currentGroups = new Map(
-			Array.from(sql.exec(
-				`SELECT api_key, key_group FROM api_keys WHERE api_key IN (${keys.map(() => '?').join(',')})`,
-				...keys
-			).raw<any>()).map((r: any) => [r[0], r[1]])
-		);
-		for (const result of checkResults) {
-			if (result.skipped) continue;
-			const target = result.valid ? 'normal' : 'abnormal';
-			if (currentGroups.get(result.key) !== target) {
-				sql.exec("UPDATE api_keys SET key_group = ? WHERE api_key = ?", target, result.key);
-			}
-		}
-
-		return jsonResponse(checkResults);
-	} catch (error: any) {
-		console.error('检查API密钥失败:', error);
 		return jsonResponse({ error: error.message || '内部服务器错误' }, 500);
 	}
 }
