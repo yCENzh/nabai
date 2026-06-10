@@ -410,9 +410,9 @@ function renderTags(items, renderItem, max) {
 	const visible = items.slice(0, max);
 	const hidden = items.slice(max);
 	return visible.map(renderItem).join(' ') +
-		' <span class="tag tag-more" onclick="var n=this.nextElementSibling;if(n){n.style.display=\'inline\';this.style.display=\'none\'}">+' + hidden.length + '</span>' +
+		' <span class="tag tag-more">+' + hidden.length + '</span>' +
 		' <span class="tag-extra" style="display:none">' + hidden.map(renderItem).join(' ') +
-		' <span class="tag tag-more" onclick="var p=this.parentElement;if(p){p.style.display=\'none\';var s=p.previousElementSibling;if(s)s.style.display=\'inline\'}">收起</span></span>';
+		' <span class="tag tag-more" data-collapse>收起</span></span>';
 }
 
 function toast(msg, isError) {
@@ -426,6 +426,25 @@ function toast(msg, isError) {
 }
 
 document.addEventListener('DOMContentLoaded', () => {
+
+document.addEventListener('click', (e) => {
+	const el = e.target;
+	if (!el.classList.contains('tag-more')) return;
+	if (el.dataset.collapse !== undefined) {
+		const extra = el.closest('.tag-extra');
+		if (!extra) return;
+		extra.style.display = 'none';
+		const prev = extra.previousElementSibling;
+		if (prev && prev.classList.contains('tag-more') && prev.dataset.collapse === undefined) {
+			prev.style.display = '';
+		}
+	} else {
+		const extra = el.nextElementSibling;
+		if (!extra || !extra.classList.contains('tag-extra')) return;
+		extra.style.display = '';
+		el.style.display = 'none';
+	}
+});
 
 function confirmModal(title, body, buttons) {
 	return new Promise(resolve => {
