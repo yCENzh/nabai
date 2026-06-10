@@ -3,7 +3,7 @@ import { isAdminAuthenticated } from './auth';
 import { fixCors } from './core/utils';
 import { clearResolveCache, resolveProvider } from './core/router';
 import { ConfigManager } from './durable/config-manager';
-import { getAbnormalKeyConfigs, markKeyAbnormal } from './pool/key-pool';
+import { getAbnormalKeyConfigs } from './pool/key-pool';
 import {
 	handleApiKeys, handleUpdateApiKey, handleDeleteApiKeys, handleToggleApiKeys, getAllApiKeys,
 	handleGetProviders, handleUpsertProvider, handleDeleteProvider,
@@ -103,18 +103,6 @@ export class LoadBalancer extends DurableObject {
 					status: err.status || 500,
 					headers: { 'Content-Type': 'application/json' },
 				});
-			}
-		}
-
-		// Internal mark-abnormal endpoint (called from Worker on 429)
-		if (pathname === '/__mark-abnormal' && request.method === 'POST') {
-			try {
-				const { apiKey } = await request.json() as any;
-				await markKeyAbnormal(this.ctx.storage.sql, apiKey);
-				clearResolveCache();
-				return new Response('ok', { status: 200 });
-			} catch (err: any) {
-				return new Response(err.message, { status: 500, headers: { 'Content-Type': 'application/json' } });
 			}
 		}
 

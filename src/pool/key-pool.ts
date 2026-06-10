@@ -58,7 +58,3 @@ export function getAbnormalKeyConfigs(sql: DurableObjectStorage['sql']): Array<{
 	}));
 }
 
-export async function markKeyAbnormal(sql: DurableObjectStorage['sql'], apiKey: string) {
-	console.log(`[health] MARKED ABNORMAL key=${maskKey(apiKey)}`);
-	await sql.exec("UPDATE api_keys SET key_group = 'abnormal' WHERE api_key = ?", apiKey);
-}
