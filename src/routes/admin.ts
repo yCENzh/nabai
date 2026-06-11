@@ -240,6 +240,7 @@ export async function handleDeleteModel(request: Request, sql: DurableObjectStor
 		const { model } = (await request.json()) as { model?: string };
 		if (!model) return jsonResponse({ error: 'model 是必填项' }, 400);
 		sql.exec('DELETE FROM key_models WHERE model = ?', model);
+		sql.exec('DELETE FROM endpoint_models WHERE model = ?', model);
 		return jsonResponse({ message: `模型 "${model}" 已删除。` });
 	} catch (error: any) {
 		return jsonResponse({ error: error.message }, 500);
