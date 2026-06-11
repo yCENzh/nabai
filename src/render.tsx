@@ -663,7 +663,7 @@ function confirmModal(title, body, buttons) {
 	document.getElementById('delete-selected-keys-btn').addEventListener('click', async () => {
 		const keys = Array.from(document.querySelectorAll('.key-cb:checked')).map(cb => cb.dataset.key);
 		if (!keys.length) return;
-		const ok = await confirmModal('删除密钥', '确定删除 ' + keys.length + ' 个密钥？\n注意：如果这些密钥绑定了模型，模型绑定关系也会被一并删除。', [
+		const ok = await confirmModal('删除密钥', '确定删除 ' + keys.length + ' 个密钥？\\n注意：如果这些密钥绑定了模型，模型绑定关系也会被一并删除。', [
 			{ label: '取消', value: false },
 			{ label: '确定删除', value: true, danger: true },
 		]);
