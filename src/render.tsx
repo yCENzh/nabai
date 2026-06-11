@@ -356,8 +356,11 @@ export const Render = ({ isAuthenticated, showWarning }: { isAuthenticated: bool
 										<input type="text" id="ef-id" placeholder="main" required />
 									</div>
 									<div class="form-field">
-										<label>路径</label>
-										<input type="text" id="ef-path" placeholder="必须以 / 开头，如 /v1" required />
+										<label>访问路径</label>
+										<div style="padding:8px 10px;border:1px solid #d4d4d4;background:#f9f9f9;font-size:14px;font-family:monospace;min-height:20px;">
+											<span id="ef-path-display"></span>
+											<span class="text-muted" id="ef-path-hint">输入 ID 后自动生成</span>
+										</div>
 									</div>
 								</div>
 								<div class="form-field" style="margin-bottom:12px;">

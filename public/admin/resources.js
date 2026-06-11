@@ -394,7 +394,7 @@ function confirmModal(title, body, buttons) {
 					'<td>' + modelsHtml + '</td>' +
 					'<td>' + (ep.enabled ? '<span class="status-ok">启用</span>' : '<span class="status-err">禁用</span>') + '</td>' +
 					'<td>' +
-						'<button class="btn btn-sm edit-endpoint" data-id="' + E(ep.id) + '" data-path="' + E(ep.path) + '" data-models="' + E((ep.models || []).join(',')) + '" data-enabled="' + (ep.enabled ? '1' : '0') + '">编辑</button> ' +
+						'<button class="btn btn-sm edit-endpoint" data-id="' + E(ep.id) + '" data-models="' + E((ep.models || []).join(',')) + '" data-enabled="' + (ep.enabled ? '1' : '0') + '">编辑</button> ' +
 						(ep.id === 'default' ? '' : '<button class="btn btn-sm btn-danger del-endpoint" data-id="' + E(ep.id) + '">删除</button>') +
 					'</td>';
 				endpointsTableBody.appendChild(tr);
@@ -402,19 +402,29 @@ function confirmModal(title, body, buttons) {
 		} catch (e) { console.error('loadEndpoints:', e); endpointsTableBody.innerHTML = '<tr class="empty-row"><td colspan="5">加载失败</td></tr>'; }
 	}
 
+	function getEndpointPath(id) {
+		return id === 'default' ? '/v1' : '/e/' + id;
+	}
+	function updatePathPreview(id) {
+		const display = document.getElementById('ef-path-display');
+		const hint = document.getElementById('ef-path-hint');
+		if (id) {
+			display.textContent = getEndpointPath(id);
+			hint.style.display = 'none';
+		} else {
+			display.textContent = '';
+			hint.style.display = '';
+		}
+	}
+	document.getElementById('ef-id').addEventListener('input', (e) => updatePathPreview(e.target.value));
+
 	endpointForm.addEventListener('submit', async (e) => {
 		e.preventDefault();
-		let path = document.getElementById('ef-path').value.trim();
-		if (path && !path.startsWith('/')) path = '/' + path;
+		const id = document.getElementById('ef-id').value.trim();
+		if (!id) { toast('请填写端点 ID', true); return; }
 		const models = Array.from(document.querySelectorAll('.ef-model-cb:checked')).map(cb => cb.value);
-		const data = {
-			id: document.getElementById('ef-id').value.trim(),
-			path: document.getElementById('ef-id').value.trim() === 'default' ? '/v1' : path,
-			models,
-			enabled: document.getElementById('ef-enabled').checked,
-		};
-		if (!data.id || !data.path) { toast('请填写所有必填项', true); return; }
 		if (!models.length) { toast('请至少绑定一个模型', true); return; }
+		const data = { id, path: getEndpointPath(id), models, enabled: document.getElementById('ef-enabled').checked };
 		const resp = await fetch('/api/endpoints', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) });
 		const result = await resp.json();
 		if (resp.ok) { toast(result.message); cancelEndpointEdit(); loadEndpoints(); }
@@ -429,7 +439,7 @@ function confirmModal(title, body, buttons) {
 		document.getElementById('endpoint-submit-btn').textContent = '保存';
 		document.getElementById('cancel-endpoint-btn').classList.add('hidden');
 		document.getElementById('ef-id').disabled = false;
-		document.getElementById('ef-path').disabled = false;
+		updatePathPreview('');
 		document.querySelectorAll('.ef-model-cb').forEach(cb => cb.checked = false);
 	}
 	document.getElementById('cancel-endpoint-btn').addEventListener('click', cancelEndpointEdit);
@@ -450,8 +460,7 @@ function confirmModal(title, body, buttons) {
 			editingEndpoint = true;
 			document.getElementById('ef-id').value = btn.dataset.id;
 			document.getElementById('ef-id').disabled = true;
-			document.getElementById('ef-path').value = btn.dataset.path;
-			document.getElementById('ef-path').disabled = btn.dataset.id === 'default';
+			updatePathPreview(btn.dataset.id);
 			document.getElementById('ef-enabled').checked = btn.dataset.enabled === '1';
 			document.getElementById('endpoint-submit-btn').textContent = '更新';
 			document.getElementById('cancel-endpoint-btn').classList.remove('hidden');
