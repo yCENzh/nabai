@@ -357,9 +357,9 @@ export const Render = ({ isAuthenticated, showWarning }: { isAuthenticated: bool
 									</div>
 									<div class="form-field">
 										<label>访问路径</label>
-										<div style="padding:8px 10px;border:1px solid #d4d4d4;background:#f9f9f9;font-size:14px;font-family:monospace;min-height:20px;">
+										<div class="text-muted" style="font-size:12px;margin-top:2px;">
 											<span id="ef-path-display"></span>
-											<span class="text-muted" id="ef-path-hint">输入 ID 后自动生成</span>
+											<span id="ef-path-hint">https://YOUR-DOMAIN/e/{'{id}'}</span>
 										</div>
 									</div>
 								</div>

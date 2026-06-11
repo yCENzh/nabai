@@ -402,21 +402,21 @@ function confirmModal(title, body, buttons) {
 		} catch (e) { console.error('loadEndpoints:', e); endpointsTableBody.innerHTML = '<tr class="empty-row"><td colspan="5">加载失败</td></tr>'; }
 	}
 
-	function getEndpointPath(id) {
-		return id === 'default' ? '/v1' : '/e/' + id;
+	function getEndpointURL(id) {
+		return id === 'default' ? location.origin + '/v1' : location.origin + '/e/' + id;
 	}
 	function updatePathPreview(id) {
 		const display = document.getElementById('ef-path-display');
 		const hint = document.getElementById('ef-path-hint');
 		if (id) {
-			display.textContent = getEndpointPath(id);
+			display.textContent = getEndpointURL(id);
 			hint.style.display = 'none';
 		} else {
 			display.textContent = '';
 			hint.style.display = '';
 		}
 	}
-	document.getElementById('ef-id').addEventListener('input', (e) => updatePathPreview(e.target.value));
+	document.getElementById('ef-id').addEventListener('blur', (e) => updatePathPreview(e.target.value));
 
 	endpointForm.addEventListener('submit', async (e) => {
 		e.preventDefault();
@@ -424,7 +424,7 @@ function confirmModal(title, body, buttons) {
 		if (!id) { toast('请填写端点 ID', true); return; }
 		const models = Array.from(document.querySelectorAll('.ef-model-cb:checked')).map(cb => cb.value);
 		if (!models.length) { toast('请至少绑定一个模型', true); return; }
-		const data = { id, path: getEndpointPath(id), models, enabled: document.getElementById('ef-enabled').checked };
+		const data = { id, path: id === 'default' ? '/v1' : '/e/' + id, models, enabled: document.getElementById('ef-enabled').checked };
 		const resp = await fetch('/api/endpoints', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) });
 		const result = await resp.json();
 		if (resp.ok) { toast(result.message); cancelEndpointEdit(); loadEndpoints(); }
