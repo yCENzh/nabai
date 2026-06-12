@@ -327,11 +327,23 @@ export class GeminiProvider implements Provider {
 		const isStream = req.stream ?? false;
 		const TASK = isStream ? 'streamGenerateContent' : 'generateContent';
 		let url = `${this.baseUrl}/${API_VERSION}/models/${model}:${TASK}`;
-		if (isStream) url += '?alt=sse';
+		const query = new URLSearchParams(ctx.queryParams);
+		if (isStream) query.set('alt', 'sse');
+		const qs = query.toString();
+		if (qs) url += '?' + qs;
+
+		const baseHeaders: Record<string, string> = makeHeaders(ctx.apiKey, { 'Content-Type': 'application/json' }) as Record<string, string>;
+		if (ctx.requestHeaders) {
+			for (const [key, value] of ctx.requestHeaders.entries()) {
+				if (!['content-type', 'x-goog-api-key'].includes(key.toLowerCase())) {
+					baseHeaders[key] = value;
+				}
+			}
+		}
 
 		const response = await fetch(url, {
 			method: 'POST',
-			headers: makeHeaders(ctx.apiKey, { 'Content-Type': 'application/json' }),
+			headers: baseHeaders,
 			body: JSON.stringify(body),
 		});
 

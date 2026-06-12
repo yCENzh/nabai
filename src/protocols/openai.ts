@@ -12,6 +12,17 @@ export class OpenAIProtocolAdapter implements ProtocolAdapter {
 			throw new HttpError('model is required', 400);
 		}
 
+		const metadata = { ...body };
+		delete metadata.model;
+		delete metadata.messages;
+		delete metadata.tools;
+		delete metadata.tool_choice;
+		delete metadata.temperature;
+		delete metadata.top_p;
+		delete metadata.max_tokens;
+		delete metadata.max_completion_tokens;
+		delete metadata.stream;
+
 		return {
 			requestId: opts.requestId,
 			model: body.model,
@@ -22,18 +33,7 @@ export class OpenAIProtocolAdapter implements ProtocolAdapter {
 			top_p: body.top_p,
 			max_tokens: body.max_tokens ?? body.max_completion_tokens,
 			stream: body.stream ?? false,
-			metadata: {
-				stream_options: body.stream_options,
-				extra_body: body.extra_body,
-				response_format: body.response_format,
-				reasoning_effort: body.reasoning_effort,
-				frequency_penalty: body.frequency_penalty,
-				presence_penalty: body.presence_penalty,
-				n: body.n,
-				seed: body.seed,
-				stop: body.stop,
-				top_k: body.top_k,
-			},
+			metadata,
 		};
 	}
 

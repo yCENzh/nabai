@@ -10,6 +10,8 @@ export async function handleAnthropicMessages(
 ): Promise<Response> {
 	const requestId = 'msg_' + generateId();
 	const { apiKey, provider, providerName } = config;
+	const url = new URL(request.url);
+	const queryParams = url.searchParams;
 
 	try {
 		const canonical = await anthropicAdapter.parseRequest(request, { requestId });
@@ -17,7 +19,7 @@ export async function handleAnthropicMessages(
 		console.log(`[proxy] stream=${isStream} tools=${canonical.tools?.length ?? 0} provider=${providerName}(${provider.type}) model=${canonical.model}`);
 
 		if (!isStream) {
-			const { response: upstreamResp } = await provider.invoke(canonical, { apiKey });
+			const { response: upstreamResp } = await provider.invoke(canonical, { apiKey, queryParams, requestHeaders: request.headers });
 			if (!upstreamResp.ok) {
 				const errText = await upstreamResp.text();
 				console.error('Upstream error:', errText);
@@ -37,7 +39,7 @@ export async function handleAnthropicMessages(
 			return anthropicAdapter.renderJson(canonicalResp, { requestId });
 		}
 
-		const { response: upstreamResp } = await provider.invoke(canonical, { apiKey });
+		const { response: upstreamResp } = await provider.invoke(canonical, { apiKey, queryParams, requestHeaders: request.headers });
 		if (!upstreamResp.ok) {
 			const errText = await upstreamResp.text();
 			console.error('[anthropic] error:', errText);

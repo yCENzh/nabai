@@ -68,6 +68,17 @@ export class AnthropicProtocolAdapter implements ProtocolAdapter {
 			else if (body.tool_choice.type === 'tool') tool_choice = { type: 'function', name: body.tool_choice.name };
 		}
 
+		const metadata = { ...body };
+		delete metadata.model;
+		delete metadata.messages;
+		delete metadata.system;
+		delete metadata.tools;
+		delete metadata.tool_choice;
+		delete metadata.max_tokens;
+		delete metadata.temperature;
+		delete metadata.top_p;
+		delete metadata.stream;
+
 		return {
 			requestId: opts.requestId,
 			model: body.model,
@@ -78,10 +89,7 @@ export class AnthropicProtocolAdapter implements ProtocolAdapter {
 			temperature: body.temperature,
 			top_p: body.top_p,
 			stream: body.stream ?? false,
-			metadata: {
-				anthropic_version: body.anthropic_version,
-				thinking: body.thinking,
-			},
+			metadata,
 		};
 	}
 

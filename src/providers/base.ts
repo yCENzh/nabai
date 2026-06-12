@@ -5,6 +5,7 @@ export interface ProviderContext {
 	baseUrl?: string;
 	signal?: AbortSignal;
 	requestHeaders?: Headers;
+	queryParams?: URLSearchParams;
 }
 
 export interface Provider {

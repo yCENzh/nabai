@@ -126,7 +126,16 @@ export class AnthropicProvider implements Provider {
 			messages.push({ role: msg.role === 'assistant' ? 'assistant' : 'user', content });
 		}
 
-		const body: any = { model: req.model, max_tokens: req.max_tokens ?? 4096, messages };
+		// Start with all original params from client, then override with IR values
+		const meta = req.metadata as any;
+		const body: any = { ...(meta || {}) };
+		delete body.extra_body;
+		if (meta?.extra_body && typeof meta.extra_body === 'object') {
+			Object.assign(body, meta.extra_body);
+		}
+		body.model = req.model;
+		body.max_tokens = req.max_tokens ?? 4096;
+		body.messages = messages;
 		if (system) body.system = system;
 		if (req.stream) body.stream = true;
 		if (req.temperature != null) body.temperature = req.temperature;
@@ -144,13 +153,27 @@ export class AnthropicProvider implements Provider {
 			else if (typeof req.tool_choice === 'object') body.tool_choice = { type: 'tool', name: req.tool_choice.name };
 		}
 
-		const response = await fetch(`${this.baseUrl}/v1/messages`, {
+		const headers: Record<string, string> = {
+			'Content-Type': 'application/json',
+			'x-api-key': ctx.apiKey,
+			'anthropic-version': ANTHROPIC_VERSION,
+		};
+		if (ctx.requestHeaders) {
+			for (const [key, value] of ctx.requestHeaders.entries()) {
+				if (!['content-type', 'x-api-key', 'authorization'].includes(key.toLowerCase())) {
+					headers[key] = value;
+				}
+			}
+		}
+
+		let url = `${this.baseUrl}/v1/messages`;
+		if (ctx.queryParams?.size) {
+			url += '?' + ctx.queryParams.toString();
+		}
+
+		const response = await fetch(url, {
 			method: 'POST',
-			headers: {
-				'Content-Type': 'application/json',
-				'x-api-key': ctx.apiKey,
-				'anthropic-version': ANTHROPIC_VERSION,
-			},
+			headers,
 			body: JSON.stringify(body),
 		});
 		return { response };

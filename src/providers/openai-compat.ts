@@ -73,26 +73,45 @@ export class OpenAICompatProvider implements Provider {
 			}
 		}
 
-		const body: any = {
-			model: req.model,
-			messages,
-			stream: req.stream ?? false,
-		};
+		const meta = req.metadata as any;
+		// Start with all original params from client, then override with IR values
+		const body: any = { ...(meta || {}) };
+		delete body.extra_body;
+		if (meta?.extra_body && typeof meta.extra_body === 'object') {
+			Object.assign(body, meta.extra_body);
+		}
+		body.model = req.model;
+		body.messages = messages;
+		body.stream = req.stream ?? false;
 		if (req.tools?.length) body.tools = req.tools;
 		if (req.tool_choice) body.tool_choice = req.tool_choice;
 		if (req.temperature != null) body.temperature = req.temperature;
 		if (req.top_p != null) body.top_p = req.top_p;
 		if (req.max_tokens != null) body.max_tokens = req.max_tokens;
-		const meta = req.metadata as any;
-		if (meta?.stream_options) {
-			body.stream_options = meta.stream_options;
-		} else if (body.stream) {
+		if (body.stream && !body.stream_options) {
 			body.stream_options = { include_usage: true };
 		}
 
-		const response = await fetch(url, {
+		const headers: Record<string, string> = {
+			'Content-Type': 'application/json',
+			'Authorization': `Bearer ${ctx.apiKey}`,
+		};
+		if (ctx.requestHeaders) {
+			for (const [key, value] of ctx.requestHeaders.entries()) {
+				if (!['content-type', 'authorization'].includes(key.toLowerCase())) {
+					headers[key] = value;
+				}
+			}
+		}
+
+		let upstreamUrl = url;
+		if (ctx.queryParams?.size) {
+			upstreamUrl += (url.includes('?') ? '&' : '?') + ctx.queryParams.toString();
+		}
+
+		const response = await fetch(upstreamUrl, {
 			method: 'POST',
-			headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${ctx.apiKey}` },
+			headers,
 			body: JSON.stringify(body),
 		});
 		return { response };

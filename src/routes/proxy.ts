@@ -57,7 +57,7 @@ async function handleEmbeddings(req: any, apiKey: string, baseUrl: string, provi
 	return new Response(response.body, fixCors(response));
 }
 
-async function handleCompletions(request: Request, apiKey: string, provider: Provider, providerName: string) {
+async function handleCompletions(request: Request, apiKey: string, provider: Provider, providerName: string, queryParams?: URLSearchParams) {
 	const requestId = 'chatcmpl-' + generateId();
 	const canonical = await adapter.parseRequest(request, { requestId });
 	const isStream = canonical.stream ?? false;
@@ -65,7 +65,7 @@ async function handleCompletions(request: Request, apiKey: string, provider: Pro
 
 	if (!isStream) {
 		try {
-			const { response: upstreamResp } = await provider.invoke(canonical, { apiKey });
+			const { response: upstreamResp } = await provider.invoke(canonical, { apiKey, queryParams, requestHeaders: request.headers });
 			if (!upstreamResp.ok) {
 				const errText = await upstreamResp.text();
 				console.error('Upstream error:', errText);
@@ -90,7 +90,7 @@ async function handleCompletions(request: Request, apiKey: string, provider: Pro
 	}
 
 	try {
-		const { response } = await provider.invoke(canonical, { apiKey });
+		const { response } = await provider.invoke(canonical, { apiKey, queryParams, requestHeaders: request.headers });
 		if (!response.ok) {
 			const errText = await response.text();
 			console.error('Upstream error:', errText);
@@ -143,6 +143,7 @@ export async function handleOpenAI(
 	const url = new URL(request.url);
 	const pathname = url.pathname;
 	const { apiKey, provider, providerName, baseUrl, providerType } = config;
+	const queryParams = url.searchParams;
 
 	const assert = (success: Boolean) => {
 		if (!success) {
@@ -157,7 +158,7 @@ export async function handleOpenAI(
 	switch (true) {
 		case pathname.endsWith('/chat/completions'):
 			assert(request.method === 'POST');
-			return handleCompletions(request, apiKey, provider, providerName).catch(errHandler);
+			return handleCompletions(request, apiKey, provider, providerName, queryParams).catch(errHandler);
 		case pathname.endsWith('/embeddings'):
 			assert(request.method === 'POST');
 			return handleEmbeddings(await request.json(), apiKey, baseUrl, providerType).catch(errHandler);
