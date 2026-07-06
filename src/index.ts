@@ -271,25 +271,29 @@ type Env = {
 };
 
 async function scheduledHandler(controller: ScheduledController, env: Env, ctx: ExecutionContext) {
-	const id: DurableObjectId = env.LOAD_BALANCER.idFromName('loadbalancer');
-	const stub = env.LOAD_BALANCER.get(id, { locationHint: 'wnam' });
+	try {
+		const id: DurableObjectId = env.LOAD_BALANCER.idFromName('loadbalancer');
+		const stub = env.LOAD_BALANCER.get(id, { locationHint: 'wnam' });
 
-	const resp = await stub.fetch(new Request('http://do/__resolve-abnormal-keys'));
-	const { rows } = await resp.json() as any;
-	if (!rows || rows.length === 0) return;
+		const resp = await stub.fetch(new Request('http://do/__resolve-abnormal-keys'));
+		const { rows } = await resp.json() as any;
+		if (!rows || rows.length === 0) return;
 
-	const updates: Array<{ api_key: string; key_group: string }> = [];
-	for (const row of rows) {
-		const ok = await healthCheckKey(row.apiKey, row.providerType, row.baseUrl, row.model, row.providerName);
-		if (ok) {
-			updates.push({ api_key: row.apiKey, key_group: 'normal' });
+		const updates: Array<{ api_key: string; key_group: string }> = [];
+		for (const row of rows) {
+			const ok = await healthCheckKey(row.apiKey, row.providerType, row.baseUrl, row.model, row.providerName);
+			if (ok) {
+				updates.push({ api_key: row.apiKey, key_group: 'normal' });
+			}
 		}
-	}
 
-	if (updates.length > 0) {
-		await stub.fetch(new Request('http://do/__batch-update-key-group', {
-			method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ updates }),
-		}));
+		if (updates.length > 0) {
+			await stub.fetch(new Request('http://do/__batch-update-key-group', {
+				method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ updates }),
+			}));
+		}
+	} catch (err) {
+		console.error('scheduledHandler error:', err);
 	}
 }
 
