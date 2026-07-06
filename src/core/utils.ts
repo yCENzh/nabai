@@ -52,15 +52,23 @@ export async function* streamSSELines(
 	let buffer = '';
 
 	while (true) {
+		let timedOut = false;
 		const result = options?.timeoutMs
 			? await Promise.race([
 					reader.read(),
 					new Promise<{ done: true; value: undefined }>(r =>
-						setTimeout(() => r({ done: true, value: undefined }), options.timeoutMs!)
+						setTimeout(() => { timedOut = true; r({ done: true, value: undefined }); }, options.timeoutMs!)
 					),
 			  ])
 			: await reader.read();
-		if (result.done) break;
+		if (result.done) {
+			// 超时触发时 reader.read() 仍在 pending，需释放 reader 锁
+			// 否则 reader 无法被 GC 回收，底层 HTTP 连接也无法取消
+			if (timedOut) {
+				try { reader.cancel(); } catch { /* reader 已关闭 */ }
+			}
+			break;
+		}
 		buffer += result.value;
 		const lines = buffer.split('\n');
 		buffer = lines.pop()!;
