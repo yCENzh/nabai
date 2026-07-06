@@ -131,7 +131,11 @@ export async function handleOpenAI(
 	};
 	const errHandler = (err: Error) => {
 		console.error(err);
-		return new Response(err.message, fixCors({ statusText: err.message ?? 'Internal Server Error', status: 500 }));
+		const status = err instanceof HttpError ? err.status : 500;
+		return new Response(
+			JSON.stringify({ error: status >= 500 ? 'Internal Server Error' : err.message }),
+			{ status, headers: { 'Content-Type': 'application/json', ...fixCors({}).headers } }
+		);
 	};
 
 	switch (true) {
