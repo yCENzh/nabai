@@ -26,37 +26,13 @@ function getDOStub(c: { env: Env }): DurableObjectStub {
 	return c.env.LOAD_BALANCER.get(id, { locationHint: 'wnam' });
 }
 
-const configCache = new Map<string, { data: any; ts: number }>();
-const CACHE_TTL = 300_000;
-
-function getCachedConfig(endpointId: string, model?: string): any | null {
-	const key = `${endpointId}:${model ?? ''}`;
-	const entry = configCache.get(key);
-	if (entry && Date.now() - entry.ts < CACHE_TTL) return entry.data;
-	configCache.delete(key);
-	return null;
-}
-
-function setCachedConfig(endpointId: string, model: string | undefined, data: any) {
-	const key = `${endpointId}:${model ?? ''}`;
-	configCache.set(key, { data, ts: Date.now() });
-}
-
-function clearConfigCache() {
-	configCache.clear();
-}
-
 async function resolveConfig(stub: DurableObjectStub, endpointId: string, model?: string): Promise<{ data: any; status: number }> {
-	const cached = getCachedConfig(endpointId, model);
-	if (cached) return { data: cached, status: 200 };
-
 	const resp = await stub.fetch(new Request('http://do/__resolve', {
 		method: 'POST',
 		headers: { 'Content-Type': 'application/json' },
 		body: JSON.stringify({ endpointId, model }),
 	}));
 	const data = await resp.json();
-	if (resp.status === 200) setCachedConfig(endpointId, model, data);
 	return { data, status: resp.status };
 }
 
@@ -162,7 +138,6 @@ app.all('*', async (c) => {
 			await stub.fetch(new Request('http://do/__batch-update-key-group', {
 				method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ updates }),
 			}));
-			clearConfigCache();
 		}
 
 		return new Response(JSON.stringify(checkResults), {
@@ -174,9 +149,6 @@ app.all('*', async (c) => {
 	if (pathname.startsWith('/api/')) {
 		const stub = getDOStub(c);
 		const resp = await stub.fetch(c.req.raw);
-		if (['POST', 'PUT', 'DELETE', 'PATCH'].includes(c.req.method) && resp.ok) {
-			clearConfigCache();
-		}
 		return new Response(resp.body, { status: resp.status, headers: resp.headers });
 	}
 
@@ -302,7 +274,6 @@ async function scheduledHandler(controller: ScheduledController, env: Env, ctx: 
 		await stub.fetch(new Request('http://do/__batch-update-key-group', {
 			method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ updates }),
 		}));
-		clearConfigCache();
 	}
 }
 

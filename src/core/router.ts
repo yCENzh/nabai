@@ -4,8 +4,22 @@ import { GeminiProvider } from '../providers/gemini';
 import { OpenAICompatProvider } from '../providers/openai-compat';
 import { AnthropicProvider } from '../providers/anthropic';
 
-const resolveCache = new Map<string, { result: ResolvedProvider; ts: number }>();
+interface CachedKeyOption {
+	apiKey: string;
+	providerType: string;
+	providerName: string;
+	baseUrl: string;
+	forwardClientKey: boolean;
+}
+interface CachedResolve {
+	endpoint: EndpointConfig;
+	keys: CachedKeyOption[];
+	ts: number;
+}
+
+const resolveCache = new Map<string, CachedResolve>();
 const CACHE_TTL = 300_000;
+const CACHE_MAX = 1000;
 
 export function clearResolveCache() {
 	resolveCache.clear();
@@ -26,15 +40,6 @@ export interface EndpointConfig {
 	enabled: boolean;
 }
 
-export interface ProviderConfig {
-	id: string;
-	type: string;
-	name: string;
-	base_url: string;
-	enabled: boolean;
-	config_json: string;
-}
-
 export interface ResolvedProvider {
 	provider: Provider;
 	providerName: string;
@@ -44,18 +49,26 @@ export interface ResolvedProvider {
 	apiKey?: string;
 }
 
-function buildProvider(provConfig: ProviderConfig): Provider {
-	if (provConfig.type === 'openai_compat') return new OpenAICompatProvider(provConfig.base_url);
-	if (provConfig.type === 'anthropic') return new AnthropicProvider(provConfig.base_url);
-	return new GeminiProvider(provConfig.base_url);
-}
-
 export async function resolveProvider(sql: DurableObjectStorage['sql'], endpointId: string, model?: string): Promise<ResolvedProvider> {
 	const cacheKey = `${endpointId}:${model ?? ''}`;
 	const cached = resolveCache.get(cacheKey);
 	if (cached && Date.now() - cached.ts < CACHE_TTL) {
-		return cached.result;
+		// 缓存命中：从已缓存的可用 key 列表中随机抽取一个
+		if (cached.keys.length === 0) {
+			throw new HttpError(`No available key for model "${model}" on endpoint "${endpointId}".`, 503);
+		}
+		const pick = cached.keys[Math.floor(Math.random() * cached.keys.length)];
+		return {
+			provider: buildProviderFromType(pick.providerType, pick.baseUrl),
+			providerName: pick.providerName,
+			baseUrl: pick.baseUrl,
+			forwardClientKey: pick.forwardClientKey,
+			endpoint: cached.endpoint,
+			apiKey: pick.apiKey,
+		};
 	}
+	// 缓存未命中或已过期：清理并重新查询
+	resolveCache.delete(cacheKey);
 
 	const epRows = Array.from(sql.exec(
 		'SELECT id, path, enabled FROM endpoints WHERE id = ?', endpointId
@@ -81,41 +94,55 @@ export async function resolveProvider(sql: DurableObjectStorage['sql'], endpoint
 		throw new HttpError(`Model "${model}" is not bound to endpoint "${endpointId}".`, 403);
 	}
 
-	const keys = Array.from(sql.exec(`
-		SELECT DISTINCT k.api_key
+	// 查询所有可用 key + 对应 provider 组合
+	const rows = Array.from(sql.exec(`
+		SELECT DISTINCT k.api_key, p.type, p.name, p.base_url, p.config_json
 		FROM api_keys k
 		JOIN key_models km ON km.api_key = k.api_key AND km.model = ?
-		WHERE k.enabled = 1 AND k.key_group = 'normal'
-		ORDER BY RANDOM() LIMIT 1
+		JOIN key_providers kp ON kp.api_key = k.api_key
+		JOIN providers p ON p.id = kp.provider_id
+		WHERE k.enabled = 1 AND k.key_group = 'normal' AND p.enabled = 1
 	`, model).raw<any>());
 
-	if (keys.length === 0) {
+	if (rows.length === 0) {
 		throw new HttpError(`No available key for model "${model}" on endpoint "${endpointId}".`, 503);
 	}
 
-	const apiKey = keys[0][0] as string;
+	const keys: CachedKeyOption[] = rows.map((row: any) => {
+		let forwardClientKey = false;
+		try { forwardClientKey = JSON.parse(row[4]).forward_client_key === true; } catch {}
+		return {
+			apiKey: row[0] as string,
+			providerType: row[1] as string,
+			providerName: row[2] as string,
+			baseUrl: row[3] as string,
+			forwardClientKey,
+		};
+	});
 
-	const providers = Array.from(sql.exec(`
-		SELECT p.id, p.type, p.name, p.base_url, p.enabled, p.config_json
-		FROM key_providers kp
-		JOIN providers p ON p.id = kp.provider_id
-		WHERE kp.api_key = ? AND p.enabled = 1
-		ORDER BY RANDOM() LIMIT 1
-	`, apiKey).raw<any>());
-
-	if (providers.length === 0) {
-		throw new HttpError(`No available provider for key on endpoint "${endpointId}".`, 503);
+	// 写入缓存（限制最大条目数，防止内存泄漏）
+	if (resolveCache.size >= CACHE_MAX) {
+		// 简单淘汰：删最早写入的一个
+		const firstKey = resolveCache.keys().next().value;
+		if (firstKey) resolveCache.delete(firstKey);
 	}
+	resolveCache.set(cacheKey, { endpoint, keys, ts: Date.now() });
 
-	const prow = providers[0];
-	const provConfig: ProviderConfig = {
-		id: prow[0] as string, type: prow[1] as string, name: prow[2] as string,
-		base_url: prow[3] as string, enabled: prow[4] === 1, config_json: prow[5] as string,
+	// 随机抽取一个返回
+	const pick = keys[Math.floor(Math.random() * keys.length)];
+	console.log(`[rot] key=${maskKey(pick.apiKey)} provider=${pick.providerName}(${pick.providerType})`);
+	return {
+		provider: buildProviderFromType(pick.providerType, pick.baseUrl),
+		providerName: pick.providerName,
+		baseUrl: pick.baseUrl,
+		forwardClientKey: pick.forwardClientKey,
+		endpoint,
+		apiKey: pick.apiKey,
 	};
-	let forwardClientKey = false;
-	try { forwardClientKey = JSON.parse(provConfig.config_json).forward_client_key === true; } catch {}
-	console.log(`[rot] key=${maskKey(apiKey)} provider=${provConfig.name}(${provConfig.type})`);
-	const result: ResolvedProvider = { provider: buildProvider(provConfig), providerName: provConfig.name, baseUrl: provConfig.base_url, forwardClientKey, endpoint, apiKey };
-	resolveCache.set(cacheKey, { result, ts: Date.now() });
-	return result;
+}
+
+function buildProviderFromType(type: string, baseUrl: string): Provider {
+	if (type === 'openai_compat') return new OpenAICompatProvider(baseUrl);
+	if (type === 'anthropic') return new AnthropicProvider(baseUrl);
+	return new GeminiProvider(baseUrl);
 }

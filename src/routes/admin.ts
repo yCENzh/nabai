@@ -43,6 +43,8 @@ export async function handleDeleteProvider(request: Request, sql: DurableObjectS
 			AND (SELECT COUNT(*) FROM key_providers kp2 WHERE kp2.api_key = kp.api_key) = 1
 		`, id).raw<any>()).map((r: any) => r[0]);
 
+		sql.exec('BEGIN');
+
 		if (soleKeys.length > 0) {
 			const placeholders = soleKeys.map(() => '?').join(',');
 			sql.exec(`DELETE FROM key_models WHERE api_key IN (${placeholders})`, ...soleKeys);
@@ -52,11 +54,15 @@ export async function handleDeleteProvider(request: Request, sql: DurableObjectS
 
 		sql.exec('DELETE FROM key_providers WHERE provider_id = ?', id);
 		sql.exec('DELETE FROM providers WHERE id = ?', id);
+
+		sql.exec('COMMIT');
+
 		return jsonResponse({
 			message: `Provider 已删除。${soleKeys.length > 0 ? `同时删除了 ${soleKeys.length} 个仅关联此 Provider 的密钥。` : ''}`,
 			deletedKeys: soleKeys.length,
 		});
 	} catch (error: any) {
+		try { sql.exec('ROLLBACK'); } catch {}
 		return jsonResponse({ error: error.message }, 500);
 	}
 }
@@ -225,12 +231,18 @@ export async function handleUpsertModel(request: Request, sql: DurableObjectStor
 		if (!model) return jsonResponse({ error: 'model 是必填项' }, 400);
 		if (!Array.isArray(keys) || keys.length === 0) return jsonResponse({ error: '至少选择一个密钥' }, 400);
 
+		sql.exec('BEGIN');
+
 		sql.exec('DELETE FROM key_models WHERE model = ?', model);
 		for (const apiKey of keys) {
 			sql.exec('INSERT INTO key_models (id, model, api_key) VALUES (?, ?, ?)', crypto.randomUUID(), model, apiKey);
 		}
+
+		sql.exec('COMMIT');
+
 		return jsonResponse({ message: `模型 "${model}" 已绑定 ${keys.length} 个密钥。` });
 	} catch (error: any) {
+		try { sql.exec('ROLLBACK'); } catch {}
 		return jsonResponse({ error: error.message }, 500);
 	}
 }
@@ -270,6 +282,9 @@ export async function handleUpsertEndpoint(request: Request, sql: DurableObjectS
 		if (!id || !path) {
 			return jsonResponse({ error: 'id, path 是必填项' }, 400);
 		}
+
+		sql.exec('BEGIN');
+
 		sql.exec(
 			`INSERT INTO endpoints (id, path, enabled, updated_at)
 			 VALUES (?, ?, ?, unixepoch())
@@ -282,8 +297,12 @@ export async function handleUpsertEndpoint(request: Request, sql: DurableObjectS
 				sql.exec('INSERT OR IGNORE INTO endpoint_models (id, endpoint_id, model) VALUES (?, ?, ?)', crypto.randomUUID(), id, model);
 			}
 		}
+
+		sql.exec('COMMIT');
+
 		return jsonResponse({ message: '端点保存成功。' });
 	} catch (error: any) {
+		try { sql.exec('ROLLBACK'); } catch {}
 		return jsonResponse({ error: error.message }, 500);
 	}
 }
@@ -342,6 +361,8 @@ export async function handleRestore(request: Request, sql: DurableObjectStorage[
 			return jsonResponse({ error: '格式无效：需要 providers, keys, endpoints 数组' }, 400);
 		}
 
+		sql.exec('BEGIN');
+
 		sql.exec('DELETE FROM endpoint_models');
 		sql.exec('DELETE FROM key_models');
 		sql.exec('DELETE FROM key_providers');
@@ -395,8 +416,11 @@ export async function handleRestore(request: Request, sql: DurableObjectStorage[
 			);
 		}
 
+		sql.exec('COMMIT');
+
 		return jsonResponse({ message: '恢复成功。', providers: data.providers.length, keys: data.keys.length, endpoints: data.endpoints.length });
 	} catch (error: any) {
+		try { sql.exec('ROLLBACK'); } catch {}
 		return jsonResponse({ error: error.message }, 500);
 	}
 }
