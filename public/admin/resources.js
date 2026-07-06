@@ -490,8 +490,57 @@ function confirmModal(title, body, buttons) {
 
 	// ─── Models ───
 	const modelForm = document.getElementById('model-form');
+	const modelTagsContainer = document.getElementById('mf-model-tags');
+	const modelTagInput = document.getElementById('mf-model-input');
 	const modelsTableBody = document.querySelector('#models-table tbody');
 	let editingModel = null;
+	let modelTags = [];
+
+	function renderModelTags() {
+		modelTagsContainer.innerHTML = '';
+		modelTags.forEach((tag, i) => {
+			const span = document.createElement('span');
+			span.className = 'tag';
+			span.innerHTML = E(tag) + '<span class="tag-remove" data-index="' + i + '">×</span>';
+			modelTagsContainer.appendChild(span);
+		});
+		modelTagsContainer.appendChild(modelTagInput);
+		modelTagInput.focus();
+	}
+
+	function addModelTags(raw) {
+		const parts = raw.split(/[\s,，、　]+/).map(s => s.trim()).filter(Boolean);
+		if (parts.length === 0) return;
+		for (const p of parts) {
+			if (!modelTags.includes(p)) modelTags.push(p);
+		}
+		modelTagInput.value = '';
+		renderModelTags();
+	}
+
+	function removeModelTag(index) {
+		modelTags.splice(index, 1);
+		renderModelTags();
+	}
+
+	modelTagsContainer.addEventListener('click', (e) => {
+		if (e.target === modelTagsContainer) modelTagInput.focus();
+		const remove = e.target.closest('.tag-remove');
+		if (remove && remove.dataset.index !== undefined) {
+			removeModelTag(parseInt(remove.dataset.index));
+		}
+	});
+
+	modelTagInput.addEventListener('blur', () => {
+		if (modelTagInput.value.trim()) addModelTags(modelTagInput.value);
+	});
+
+	modelTagInput.addEventListener('keydown', (e) => {
+		if (e.key === 'Enter' || e.key === ',') {
+			e.preventDefault();
+			if (modelTagInput.value.trim()) addModelTags(modelTagInput.value);
+		}
+	});
 
 	async function loadModels() {
 		try {
@@ -537,7 +586,9 @@ function confirmModal(title, body, buttons) {
 
 	function cancelModelEdit() {
 		editingModel = null;
-		modelForm.reset();
+		modelTags = [];
+		modelTagInput.value = '';
+		renderModelTags();
 		document.getElementById('model-submit-btn').textContent = '保存';
 		document.getElementById('cancel-model-btn').classList.add('hidden');
 	}
@@ -546,16 +597,20 @@ function confirmModal(title, body, buttons) {
 
 	modelForm.addEventListener('submit', async (e) => {
 		e.preventDefault();
-		const model = document.getElementById('mf-model').value.trim();
+		if (modelTagInput.value.trim()) addModelTags(modelTagInput.value);
 		const keys = Array.from(document.querySelectorAll('.model-key-cb:checked')).map(cb => cb.value);
-		if (!model) { toast('请输入模型名称', true); return; }
+		if (!modelTags.length) { toast('请输入模型名称', true); return; }
 		if (!keys.length) { toast('请至少选择一个密钥', true); return; }
-		try {
-			const resp = await fetch('/api/models', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ model, keys }) });
-			const result = await resp.json();
-			if (resp.ok) { toast(result.message); cancelModelEdit(); loadModels(); }
-			else toast('保存失败: ' + (result.error || ''), true);
-		} catch (err) { toast('请求失败', true); }
+		let added = 0;
+		for (const model of modelTags) {
+			try {
+				const resp = await fetch('/api/models', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ model, keys }) });
+				const result = await resp.json();
+				if (resp.ok) added++;
+				else toast('保存失败: ' + model + ' — ' + (result.error || ''), true);
+			} catch (err) { toast('请求失败: ' + model, true); }
+		}
+		if (added > 0) { toast('成功添加 ' + added + ' 个模型'); cancelModelEdit(); loadModels(); }
 	});
 
 	modelsTableBody.addEventListener('click', async (e) => {
@@ -569,10 +624,13 @@ function confirmModal(title, body, buttons) {
 			if (!ok) return;
 			await fetch('/api/models', { method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ model: btn.dataset.model }) });
 			loadModels();
+			loadEndpoints();
 		}
 		if (btn.classList.contains('edit-model')) {
 			editingModel = btn.dataset.model;
-			document.getElementById('mf-model').value = btn.dataset.model;
+			modelTags = [btn.dataset.model];
+			modelTagInput.value = '';
+			renderModelTags();
 			document.getElementById('model-submit-btn').textContent = '更新';
 			document.getElementById('cancel-model-btn').classList.remove('hidden');
 			const keys = btn.dataset.keys ? btn.dataset.keys.split(',') : [];

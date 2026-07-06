@@ -311,8 +311,10 @@ export const Render = ({ isAuthenticated, showWarning }: { isAuthenticated: bool
 							<form id="model-form">
 								<div class="form-row">
 									<div class="form-field">
-										<label>Model 名称</label>
-										<input type="text" id="mf-model" placeholder="如 claude-3-5-sonnet, gpt-4o" required />
+										<label>Model 名称（支持批量，用空格/逗号分隔）</label>
+										<div class="tag-input" id="mf-model-tags">
+											<input type="text" id="mf-model-input" placeholder="输入模型名称，按回车或失焦确认" autocomplete="off" />
+										</div>
 									</div>
 								</div>
 								<div class="form-field" style="margin-bottom:12px;">

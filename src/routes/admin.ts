@@ -282,6 +282,7 @@ export async function handleUpsertModel(request: Request, storage: DurableObject
 		const { model, keys } = (await request.json()) as { model?: string; keys?: string[] };
 		if (!model) return jsonResponse({ error: 'model 是必填项' }, 400);
 		if (!Array.isArray(keys) || keys.length === 0) return jsonResponse({ error: '至少选择一个密钥' }, 400);
+		if (/[\s,，、　]/.test(model)) return jsonResponse({ error: '模型名称不能分隔符' }, 400);
 
 		storage.transactionSync(() => {
 			storage.sql.exec('DELETE FROM key_models WHERE model = ?', model);
