@@ -63,7 +63,7 @@ export async function resolveProvider(sql: DurableObjectStorage['sql'], endpoint
 		}
 		const pick = cached.keys[Math.floor(Math.random() * cached.keys.length)];
 		return {
-			provider: buildProviderFromType(pick.providerType, pick.baseUrl),
+			provider: buildProvider(pick.providerType, pick.baseUrl),
 			providerName: pick.providerName,
 			baseUrl: pick.baseUrl,
 			forwardClientKey: pick.forwardClientKey,
@@ -136,7 +136,7 @@ export async function resolveProvider(sql: DurableObjectStorage['sql'], endpoint
 	const pick = keys[Math.floor(Math.random() * keys.length)];
 	console.log(`[rot] key=${maskKey(pick.apiKey)} provider=${pick.providerName}(${pick.providerType})`);
 	return {
-		provider: buildProviderFromType(pick.providerType, pick.baseUrl),
+		provider: buildProvider(pick.providerType, pick.baseUrl),
 		providerName: pick.providerName,
 		baseUrl: pick.baseUrl,
 		forwardClientKey: pick.forwardClientKey,
@@ -145,7 +145,7 @@ export async function resolveProvider(sql: DurableObjectStorage['sql'], endpoint
 	};
 }
 
-function buildProviderFromType(type: string, baseUrl: string): Provider {
+export function buildProvider(type: string, baseUrl: string): Provider {
 	if (type === 'openai_compat') return new OpenAICompatProvider(baseUrl);
 	if (type === 'anthropic') return new AnthropicProvider(baseUrl);
 	return new GeminiProvider(baseUrl);

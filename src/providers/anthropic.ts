@@ -1,3 +1,4 @@
+import { streamSSELines, STREAM_TIMEOUT_MS } from '../core/utils';
 import type { CanonicalRequest, CanonicalResponse, CanonicalStreamEvent } from '../core/types';
 import type { Provider, ProviderContext } from './base';
 
@@ -185,8 +186,6 @@ export class AnthropicProvider implements Provider {
 	}
 }
 
-const STREAM_TIMEOUT_MS = 300_000; // 5 min
-
 function parseSseEvents(parsed: any): { events: CanonicalStreamEvent[]; stopReason?: string; usage?: { input_tokens?: number; output_tokens?: number }; isError?: boolean } {
 	const events: CanonicalStreamEvent[] = [];
 	let stopReason: string | undefined;
@@ -215,48 +214,17 @@ function parseSseEvents(parsed: any): { events: CanonicalStreamEvent[]; stopReas
 }
 
 async function* anthropicStreamToCanonical(response: Response): AsyncIterable<CanonicalStreamEvent> {
-	const reader = response.body!.pipeThrough(new TextDecoderStream()).getReader();
-	let buffer = '';
 	let stopReason: string | undefined;
 	let usage: { input_tokens?: number; output_tokens?: number } | undefined;
 
-	while (true) {
-		const result = await Promise.race([
-			reader.read(),
-			new Promise<{ done: true; value: undefined }>(r => setTimeout(() => r({ done: true, value: undefined }), STREAM_TIMEOUT_MS)),
-		]);
-		if (result.done) break;
-		buffer += result.value;
-		const lines = buffer.split('\n');
-		buffer = lines.pop()!;
-
-		for (const line of lines) {
-			if (!line.startsWith('data: ')) continue;
-			const data = line.substring(6).trim();
-			if (!data.startsWith('{')) continue;
-			try {
-				const result = parseSseEvents(JSON.parse(data));
-				if (result.stopReason) stopReason = result.stopReason;
-				if (result.usage) usage = { ...usage, ...result.usage };
-				yield* result.events;
-				if (result.isError) return;
-			} catch {}
-		}
-	}
-
-	if (buffer) {
-		const lines = (buffer + '\n').split('\n');
-		for (const line of lines) {
-			if (!line.startsWith('data: ')) continue;
-			const data = line.substring(6).trim();
-			if (!data.startsWith('{')) continue;
-			try {
-				const result = parseSseEvents(JSON.parse(data));
-				if (result.stopReason) stopReason = result.stopReason;
-				if (result.usage) usage = { ...usage, ...result.usage };
-				yield* result.events;
-			} catch {}
-		}
+	for await (const json of streamSSELines(response, { timeoutMs: STREAM_TIMEOUT_MS })) {
+		try {
+			const result = parseSseEvents(JSON.parse(json));
+			if (result.stopReason) stopReason = result.stopReason;
+			if (result.usage) usage = { ...usage, ...result.usage };
+			yield* result.events;
+			if (result.isError) return;
+		} catch {}
 	}
 	yield { type: 'done', finishReason: stopReason, usage };
 }

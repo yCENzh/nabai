@@ -1,7 +1,6 @@
 import { HttpError, fixCors, makeHeaders, generateId } from '../core/utils';
 import type { Provider } from '../providers/base';
 import { OpenAIProtocolAdapter } from '../protocols/openai';
-import { parseStream, parseStreamFlush, toOpenAiStream, toOpenAiStreamFlush } from '../providers/gemini-stream';
 
 const adapter = new OpenAIProtocolAdapter();
 
@@ -100,34 +99,6 @@ async function handleCompletions(request: Request, apiKey: string, provider: Pro
 				...fixCors(response),
 				status: response.status,
 			});
-		}
-
-		if (provider.type === 'gemini') {
-			const shared = {};
-			const responseBody = response
-				.body!.pipeThrough(new TextDecoderStream())
-				.pipeThrough(
-					new TransformStream({
-						transform: parseStream,
-						flush: parseStreamFlush,
-						buffer: '',
-						shared,
-					} as any)
-				)
-				.pipeThrough(
-					new TransformStream({
-						transform: toOpenAiStream,
-						flush: toOpenAiStreamFlush,
-						model: canonical.model,
-						id: requestId,
-						last: [],
-						reasoningLast: [],
-						shared,
-					} as any)
-				)
-				.pipeThrough(new TextEncoderStream());
-
-			return new Response(responseBody, fixCors(response));
 		}
 
 		const events = provider.parseStream(response, canonical);

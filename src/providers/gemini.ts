@@ -1,4 +1,4 @@
-import { HttpError, BASE_URL, API_VERSION, makeHeaders } from '../core/utils';
+import { HttpError, BASE_URL, API_VERSION, makeHeaders, streamSSELines } from '../core/utils';
 import type { CanonicalRequest, CanonicalResponse, CanonicalStreamEvent } from '../core/types';
 import type { Provider, ProviderContext } from './base';
 
@@ -357,83 +357,42 @@ export class GeminiProvider implements Provider {
 }
 
 async function* streamToCanonical(response: Response, req: CanonicalRequest): AsyncIterable<CanonicalStreamEvent> {
-	const reader = response.body!.pipeThrough(new TextDecoderStream()).getReader();
-	let buffer = '';
 	let lastTexts: Record<number, string> = {};
 	let lastReasoning: Record<number, string> = {};
 	let usage: { input_tokens?: number; output_tokens?: number } | undefined;
 
-	while (true) {
-		const { done, value } = await reader.read();
-		if (done) break;
-		buffer += value;
-		const lines = buffer.split('\n');
-		buffer = lines.pop()!;
+	for await (const json of streamSSELines(response)) {
+		let parsed: any;
+		try { parsed = JSON.parse(json); } catch { continue; }
 
-		for (const line of lines) {
-			if (!line.startsWith('data: ')) continue;
-			const data = line.substring(6);
-			if (!data.startsWith('{')) continue;
-
-			let parsed: any;
-			try { parsed = JSON.parse(data); } catch { continue; }
-
-			if (parsed.usageMetadata) {
-				usage = { input_tokens: parsed.usageMetadata.promptTokenCount, output_tokens: parsed.usageMetadata.candidatesTokenCount };
-			}
-
-			if (parsed.candidates) {
-				for (const cand of parsed.candidates) {
-					const { index, content, finishReason } = cand;
-					const parts = content?.parts ?? [];
-					const { reasoningContent, finalContent } = parseThinkingParts(parts);
-
-					if (reasoningContent) {
-						const last = lastReasoning[index] || '';
-						const delta = reasoningContent.length > last.length ? reasoningContent.substring(last.length) : reasoningContent;
-						lastReasoning[index] = reasoningContent;
-						if (delta) yield { type: 'reasoning_delta', text: delta };
-					}
-
-					if (finalContent) {
-						const last = lastTexts[index] || '';
-						const delta = finalContent.length > last.length ? finalContent.substring(last.length) : finalContent;
-						lastTexts[index] = finalContent;
-						if (delta) yield { type: 'text_delta', text: delta };
-					}
-
-					if (finishReason) {
-						yield { type: 'done', finishReason: GEMINI_REASONS_MAP[finishReason] || finishReason, usage };
-					}
-				}
-			}
+		if (parsed.usageMetadata) {
+			usage = { input_tokens: parsed.usageMetadata.promptTokenCount, output_tokens: parsed.usageMetadata.candidatesTokenCount };
 		}
-	}
 
-	if (buffer.startsWith('data: ')) {
-		const data = buffer.substring(6);
-		if (data.startsWith('{')) {
-			try {
-				const parsed = JSON.parse(data);
-				if (parsed.candidates) {
-					for (const cand of parsed.candidates) {
-						const { index, content, finishReason } = cand;
-						const parts = content?.parts ?? [];
-						const { reasoningContent, finalContent } = parseThinkingParts(parts);
-						if (reasoningContent) {
-							const last = lastReasoning[index] || '';
-							const delta = reasoningContent.length > last.length ? reasoningContent.substring(last.length) : reasoningContent;
-							if (delta) yield { type: 'reasoning_delta', text: delta };
-						}
-						if (finalContent) {
-							const last = lastTexts[index] || '';
-							const delta = finalContent.length > last.length ? finalContent.substring(last.length) : finalContent;
-							if (delta) yield { type: 'text_delta', text: delta };
-						}
-						if (finishReason) yield { type: 'done', finishReason: GEMINI_REASONS_MAP[finishReason] || finishReason, usage };
-					}
+		if (parsed.candidates) {
+			for (const cand of parsed.candidates) {
+				const { index, content, finishReason } = cand;
+				const parts = content?.parts ?? [];
+				const { reasoningContent, finalContent } = parseThinkingParts(parts);
+
+				if (reasoningContent) {
+					const last = lastReasoning[index] || '';
+					const delta = reasoningContent.length > last.length ? reasoningContent.substring(last.length) : reasoningContent;
+					lastReasoning[index] = reasoningContent;
+					if (delta) yield { type: 'reasoning_delta', text: delta };
 				}
-			} catch {}
+
+				if (finalContent) {
+					const last = lastTexts[index] || '';
+					const delta = finalContent.length > last.length ? finalContent.substring(last.length) : finalContent;
+					lastTexts[index] = finalContent;
+					if (delta) yield { type: 'text_delta', text: delta };
+				}
+
+				if (finishReason) {
+					yield { type: 'done', finishReason: GEMINI_REASONS_MAP[finishReason] || finishReason, usage };
+				}
+			}
 		}
 	}
 }

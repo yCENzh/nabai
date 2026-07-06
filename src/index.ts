@@ -3,23 +3,13 @@ import { Render } from './render';
 import { LoadBalancer } from './handler';
 import { getAuthKey } from './auth';
 import { getCookie, setCookie } from 'hono/cookie';
-import { extractEndpointId, stripEndpointPrefix } from './core/router';
+import { extractEndpointId, stripEndpointPrefix, buildProvider } from './core/router';
 import { handleOpenAI } from './routes/proxy';
 import { handleAnthropicMessages } from './routes/anthropic';
-import { GeminiProvider } from './providers/gemini';
-import { OpenAICompatProvider } from './providers/openai-compat';
-import { AnthropicProvider } from './providers/anthropic';
-import type { Provider } from './providers/base';
 import { fixCors, maskKey, BASE_URL } from './core/utils';
 import { healthCheckKey } from './pool/key-pool';
 
 const app = new Hono<{ Bindings: Env }>();
-
-function buildProvider(type: string, baseUrl: string): Provider {
-	if (type === 'openai_compat') return new OpenAICompatProvider(baseUrl);
-	if (type === 'anthropic') return new AnthropicProvider(baseUrl);
-	return new GeminiProvider(baseUrl);
-}
 
 function getDOStub(c: { env: Env }): DurableObjectStub {
 	const id: DurableObjectId = c.env.LOAD_BALANCER.idFromName('loadbalancer');

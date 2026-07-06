@@ -1,3 +1,4 @@
+import { streamSSELines, STREAM_TIMEOUT_MS } from '../core/utils';
 import type { CanonicalRequest, CanonicalResponse, CanonicalStreamEvent } from '../core/types';
 import type { Provider, ProviderContext } from './base';
 
@@ -123,8 +124,6 @@ export class OpenAICompatProvider implements Provider {
 	}
 }
 
-const STREAM_TIMEOUT_MS = 300_000; // 5 min
-
 function parseOpenAiChunk(parsed: any): { events: CanonicalStreamEvent[]; finishReason?: string; usage?: { input_tokens?: number; output_tokens?: number } } {
 	const events: CanonicalStreamEvent[] = [];
 	let finishReason: string | undefined;
@@ -148,49 +147,16 @@ function parseOpenAiChunk(parsed: any): { events: CanonicalStreamEvent[]; finish
 }
 
 async function* openaiStreamToCanonical(response: Response): AsyncIterable<CanonicalStreamEvent> {
-	const reader = response.body!.pipeThrough(new TextDecoderStream()).getReader();
-	let buffer = '';
 	let finishReason: string | undefined;
 	let usage: { input_tokens?: number; output_tokens?: number } | undefined;
 
-	while (true) {
-		const result = await Promise.race([
-			reader.read(),
-			new Promise<{ done: true; value: undefined }>(r => setTimeout(() => r({ done: true, value: undefined }), STREAM_TIMEOUT_MS)),
-		]);
-		if (result.done) break;
-		buffer += result.value;
-		const lines = buffer.split('\n');
-		buffer = lines.pop()!;
-
-		for (const line of lines) {
-			if (!line.startsWith('data: ')) continue;
-			const data = line.substring(6).trim();
-			if (data === '[DONE]') continue;
-			if (!data.startsWith('{')) continue;
-			try {
-				const { events, finishReason: fr, usage: u } = parseOpenAiChunk(JSON.parse(data));
-				if (fr) finishReason = fr;
-				if (u) usage = u;
-				yield* events;
-			} catch {}
-		}
-	}
-
-	if (buffer) {
-		const lines = (buffer + '\n').split('\n');
-		for (const line of lines) {
-			if (!line.startsWith('data: ')) continue;
-			const data = line.substring(6).trim();
-			if (data === '[DONE]') continue;
-			if (!data.startsWith('{')) continue;
-			try {
-				const { events, finishReason: fr, usage: u } = parseOpenAiChunk(JSON.parse(data));
-				if (fr) finishReason = fr;
-				if (u) usage = u;
-				yield* events;
-			} catch {}
-		}
+	for await (const json of streamSSELines(response, { timeoutMs: STREAM_TIMEOUT_MS })) {
+		try {
+			const { events, finishReason: fr, usage: u } = parseOpenAiChunk(JSON.parse(json));
+			if (fr) finishReason = fr;
+			if (u) usage = u;
+			yield* events;
+		} catch {}
 	}
 	yield { type: 'done', finishReason: finishReason ?? 'stop', usage };
 }

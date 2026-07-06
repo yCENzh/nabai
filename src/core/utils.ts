@@ -36,3 +36,51 @@ export function maskKey(key: string): string {
 	if (!key || key.length < 8) return '****';
 	return `${key.slice(0, 4)}...${key.slice(-4)}`;
 }
+
+export const STREAM_TIMEOUT_MS = 300_000; // 5 min
+
+/**
+ * 从 SSE (Server-Sent Events) 响应中逐行提取 `data: {json}` 的 JSON 内容。
+ * 处理 buffer 拼接、超时、尾部残留数据。
+ * 自动过滤掉非 JSON 行和 `data: [DONE]` 行。
+ */
+export async function* streamSSELines(
+	response: Response,
+	options?: { timeoutMs?: number }
+): AsyncGenerator<string, void, void> {
+	const reader = response.body!.pipeThrough(new TextDecoderStream()).getReader();
+	let buffer = '';
+
+	while (true) {
+		const result = options?.timeoutMs
+			? await Promise.race([
+					reader.read(),
+					new Promise<{ done: true; value: undefined }>(r =>
+						setTimeout(() => r({ done: true, value: undefined }), options.timeoutMs!)
+					),
+			  ])
+			: await reader.read();
+		if (result.done) break;
+		buffer += result.value;
+		const lines = buffer.split('\n');
+		buffer = lines.pop()!;
+
+		for (const line of lines) {
+			if (!line.startsWith('data: ')) continue;
+			const data = line.substring(6).trim();
+			if (!data.startsWith('{')) continue;
+			yield data;
+		}
+	}
+
+	// 尾部：处理缓冲区中可能残留的最后一行
+	if (buffer) {
+		const lines = (buffer + '\n').split('\n');
+		for (const line of lines) {
+			if (!line.startsWith('data: ')) continue;
+			const data = line.substring(6).trim();
+			if (!data.startsWith('{')) continue;
+			yield data;
+		}
+	}
+}
