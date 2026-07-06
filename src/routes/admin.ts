@@ -436,6 +436,15 @@ export async function handleRestore(request: Request, storage: DurableObjectStor
 		if (data.providers.some(p => !p.id || !p.type || !p.name || !p.base_url)) {
 			return jsonResponse({ error: 'providers 中包含不完整的条目' }, 400);
 		}
+		if (data.providers.some(p => !validateId(p.id))) {
+			return jsonResponse({ error: 'providers ID 格式无效' }, 400);
+		}
+		if (data.providers.some(p => !VALID_PROVIDER_TYPES.has(p.type))) {
+			return jsonResponse({ error: `无效的 Provider 类型` }, 400);
+		}
+		if (data.providers.some(p => !validateUrl(p.base_url))) {
+			return jsonResponse({ error: 'base_url 不是合法的 URL' }, 400);
+		}
 		if (data.keys.some(k => !k.api_key)) {
 			return jsonResponse({ error: 'keys 中包含不完整的条目' }, 400);
 		}

@@ -25,8 +25,8 @@ export class AnthropicProvider implements Provider {
 		const toolCalls: any[] = [];
 
 		for (const block of data.content ?? []) {
-			if (block.type === 'text') textContent = block.text;
-			if (block.type === 'thinking') reasoningContent = block.thinking;
+			if (block.type === 'text') textContent = (textContent ?? '') + block.text;
+			if (block.type === 'thinking') reasoningContent = (reasoningContent ?? '') + block.thinking;
 			if (block.type === 'tool_use') {
 				toolCalls.push({
 					id: block.id,

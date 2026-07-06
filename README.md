@@ -7,7 +7,7 @@
 - **多 Provider 支持**：Gemini（原生）、OpenAI 兼容（OpenAI / DeepSeek / 任意兼容端点）、Anthropic
 - **双协议入口**：同时兼容 OpenAI 和 Anthropic 格式的请求，自动转换为 Provider 对应的格式
 - **密钥池负载均衡**：多个 API 密钥随机选取，健康检查自动恢复
-- **端点映射**：通过 `/e/:endpointId/` 前缀将不同路径路由到不同 Provider
+- **端点映射**：通过 `/e/:endpointId/` 前缀将不同路径绑定不同模型集合（密钥和 Provider 根据模型自动选取）
 - **透传客户端密钥**：每个 Provider 可独立配置，开启后客户端自带的 key 直接透传到上游
 - **管理面板**：Web UI 管理 Provider、密钥、端点，支持批量操作、健康检查、导入导出备份
 - **Durable Objects 持久化**：所有配置存储在 Cloudflare DO 的 SQLite 中

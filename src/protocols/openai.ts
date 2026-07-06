@@ -23,12 +23,25 @@ export class OpenAIProtocolAdapter implements ProtocolAdapter {
 		delete metadata.max_completion_tokens;
 		delete metadata.stream;
 
+		// Normalize OpenAI tool_choice format to canonical {@type function; name}
+		let tool_choice: CanonicalRequest['tool_choice'];
+		if (body.tool_choice) {
+			if (typeof body.tool_choice === 'string') {
+				tool_choice = body.tool_choice;
+			} else if (body.tool_choice?.function?.name) {
+				// OpenAI format: { type: "function", function: { name: "..." } }
+				tool_choice = { type: 'function', name: body.tool_choice.function.name };
+			} else {
+				tool_choice = body.tool_choice;
+			}
+		}
+
 		return {
 			requestId: opts.requestId,
 			model: body.model,
 			messages: body.messages,
 			tools: body.tools,
-			tool_choice: body.tool_choice,
+			tool_choice,
 			temperature: body.temperature,
 			top_p: body.top_p,
 			max_tokens: body.max_tokens ?? body.max_completion_tokens,
