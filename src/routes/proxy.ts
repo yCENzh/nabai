@@ -49,7 +49,9 @@ async function handleEmbeddings(req: any, apiKey: string, baseUrl: string, provi
 	}
 
 	// OpenAI-compatible providers: forward as-is with Bearer auth
-	const response = await fetch(`${baseUrl.replace(/\/+$/, '')}/v1/embeddings`, {
+	// Note: baseUrl already includes /v1 (e.g. https://api.openai.com/v1),
+	// so only append /embeddings (not /v1/embeddings)
+	const response = await fetch(`${baseUrl.replace(/\/+$/, '')}/embeddings`, {
 		method: 'POST',
 		headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
 		body: JSON.stringify({ model: modelName, input: req.input, dimensions: req.dimensions }),
