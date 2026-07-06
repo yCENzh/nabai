@@ -35,7 +35,7 @@ async function handleEmbeddings(req: EmbeddingsRequest, apiKey: string, baseUrl:
 
 		let responseBody: BodyInit | null = response.body;
 		if (response.ok) {
-			const body: { embeddings?: Array<{ values?: number[] }> } = JSON.parse(await response.text());
+			const body: { embeddings?: Array<{ values?: number[] }> } = await response.json();
 			responseBody = JSON.stringify(
 				{
 					object: 'list',
