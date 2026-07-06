@@ -100,12 +100,7 @@ export class OpenAICompatProvider implements Provider {
 		if (ctx.requestHeaders) {
 			for (const [key, value] of ctx.requestHeaders.entries()) {
 				const lower = key.toLowerCase();
-				if (['content-type', 'authorization'].includes(lower)) continue;
-				if (lower === 'cookie') {
-					const cleaned = value.replace(/(?:^|;\s*)auth-key=[^;]*;?\s*/g, '').trim();
-					if (cleaned) headers[key] = cleaned;
-					continue;
-				}
+				if (lower === 'content-type' || lower === 'authorization') continue;
 				headers[key] = value;
 			}
 		}
