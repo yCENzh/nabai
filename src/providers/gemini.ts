@@ -141,13 +141,7 @@ export async function parseImg(url: string) {
 			}
 			mimeType = response.headers.get('content-type');
 			const buf = new Uint8Array(await response.arrayBuffer());
-			// 分块编码，避免逐字节循环和 spread 栈溢出
-			let bin = '';
-			const chunk = 8192;
-			for (let i = 0; i < buf.length; i += chunk) {
-				bin += String.fromCharCode(...buf.subarray(i, i + chunk));
-			}
-			data = btoa(bin);
+			data = btoa(new TextDecoder('latin1').decode(buf));
 		} catch (err) {
 			throw new Error('Error fetching image: ' + (err as Error).message);
 		}
