@@ -32,37 +32,34 @@ export async function handleUpsertProvider(request: Request, sql: DurableObjectS
 	}
 }
 
-export async function handleDeleteProvider(request: Request, sql: DurableObjectStorage['sql']): Promise<Response> {
+export async function handleDeleteProvider(request: Request, storage: DurableObjectStorage): Promise<Response> {
 	try {
 		const { id } = (await request.json()) as any;
 		if (!id) return jsonResponse({ error: 'id 是必填项' }, 400);
 
-		const soleKeys = Array.from(sql.exec(`
+		const soleKeys = Array.from(storage.sql.exec(`
 			SELECT kp.api_key FROM key_providers kp
 			WHERE kp.provider_id = ?
 			AND (SELECT COUNT(*) FROM key_providers kp2 WHERE kp2.api_key = kp.api_key) = 1
 		`, id).raw<any>()).map((r: any) => r[0]);
 
-		sql.exec('BEGIN TRANSACTION');
+		storage.transactionSync(() => {
+			if (soleKeys.length > 0) {
+				const placeholders = soleKeys.map(() => '?').join(',');
+				storage.sql.exec(`DELETE FROM key_models WHERE api_key IN (${placeholders})`, ...soleKeys);
+				storage.sql.exec(`DELETE FROM key_providers WHERE api_key IN (${placeholders})`, ...soleKeys);
+				storage.sql.exec(`DELETE FROM api_keys WHERE api_key IN (${placeholders})`, ...soleKeys);
+			}
 
-		if (soleKeys.length > 0) {
-			const placeholders = soleKeys.map(() => '?').join(',');
-			sql.exec(`DELETE FROM key_models WHERE api_key IN (${placeholders})`, ...soleKeys);
-			sql.exec(`DELETE FROM key_providers WHERE api_key IN (${placeholders})`, ...soleKeys);
-			sql.exec(`DELETE FROM api_keys WHERE api_key IN (${placeholders})`, ...soleKeys);
-		}
-
-		sql.exec('DELETE FROM key_providers WHERE provider_id = ?', id);
-		sql.exec('DELETE FROM providers WHERE id = ?', id);
-
-		sql.exec('COMMIT');
+			storage.sql.exec('DELETE FROM key_providers WHERE provider_id = ?', id);
+			storage.sql.exec('DELETE FROM providers WHERE id = ?', id);
+		});
 
 		return jsonResponse({
 			message: `Provider 已删除。${soleKeys.length > 0 ? `同时删除了 ${soleKeys.length} 个仅关联此 Provider 的密钥。` : ''}`,
 			deletedKeys: soleKeys.length,
 		});
 	} catch (error: any) {
-		try { sql.exec('ROLLBACK'); } catch {}
 		return jsonResponse({ error: error.message }, 500);
 	}
 }
@@ -103,7 +100,7 @@ export async function handleApiKeys(request: Request, sql: DurableObjectStorage[
 	}
 }
 
-export async function handleUpdateApiKey(request: Request, sql: DurableObjectStorage['sql']): Promise<Response> {
+export async function handleUpdateApiKey(request: Request, storage: DurableObjectStorage): Promise<Response> {
 	try {
 		const { api_key, provider_ids, health_check_enabled } = (await request.json()) as {
 			api_key: string; provider_ids?: string[]; health_check_enabled?: boolean;
@@ -111,50 +108,44 @@ export async function handleUpdateApiKey(request: Request, sql: DurableObjectSto
 		if (!api_key) return jsonResponse({ error: 'api_key 是必填项' }, 400);
 		if (!Array.isArray(provider_ids) || provider_ids.length === 0) return jsonResponse({ error: '至少选择一个 Provider' }, 400);
 
-		sql.exec('BEGIN TRANSACTION');
-
-		sql.exec(
-			'UPDATE api_keys SET health_check_enabled = ? WHERE api_key = ?',
-			health_check_enabled !== false ? 1 : 0, api_key
-		);
-		sql.exec('DELETE FROM key_providers WHERE api_key = ?', api_key);
-		for (const pid of provider_ids) {
-			sql.exec('INSERT OR IGNORE INTO key_providers (id, api_key, provider_id) VALUES (?, ?, ?)', crypto.randomUUID(), api_key, pid);
-		}
-
-		sql.exec('COMMIT');
+		storage.transactionSync(() => {
+			storage.sql.exec(
+				'UPDATE api_keys SET health_check_enabled = ? WHERE api_key = ?',
+				health_check_enabled !== false ? 1 : 0, api_key
+			);
+			storage.sql.exec('DELETE FROM key_providers WHERE api_key = ?', api_key);
+			for (const pid of provider_ids) {
+				storage.sql.exec('INSERT OR IGNORE INTO key_providers (id, api_key, provider_id) VALUES (?, ?, ?)', crypto.randomUUID(), api_key, pid);
+			}
+		});
 
 		return jsonResponse({ message: '密钥更新成功。' });
 	} catch (error: any) {
-		try { sql.exec('ROLLBACK'); } catch {}
 		console.error('更新密钥失败:', error);
 		return jsonResponse({ error: error.message || '内部服务器错误' }, 500);
 	}
 }
 
-export async function handleDeleteApiKeys(request: Request, sql: DurableObjectStorage['sql']): Promise<Response> {
+export async function handleDeleteApiKeys(request: Request, storage: DurableObjectStorage): Promise<Response> {
 	try {
 		const { keys } = (await request.json()) as { keys: string[] };
 		if (!Array.isArray(keys) || keys.length === 0) {
 			return jsonResponse({ error: '请求体无效，需要一个包含key的非空数组。' }, 400);
 		}
 
-		sql.exec('BEGIN TRANSACTION');
-
-		const batchSize = 500;
-		for (let i = 0; i < keys.length; i += batchSize) {
-			const batch = keys.slice(i, i + batchSize);
-			const placeholders = batch.map(() => '?').join(',');
-			sql.exec(`DELETE FROM key_models WHERE api_key IN (${placeholders})`, ...batch);
-			sql.exec(`DELETE FROM key_providers WHERE api_key IN (${placeholders})`, ...batch);
-			sql.exec(`DELETE FROM api_keys WHERE api_key IN (${placeholders})`, ...batch);
-		}
-
-		sql.exec('COMMIT');
+		storage.transactionSync(() => {
+			const batchSize = 500;
+			for (let i = 0; i < keys.length; i += batchSize) {
+				const batch = keys.slice(i, i + batchSize);
+				const placeholders = batch.map(() => '?').join(',');
+				storage.sql.exec(`DELETE FROM key_models WHERE api_key IN (${placeholders})`, ...batch);
+				storage.sql.exec(`DELETE FROM key_providers WHERE api_key IN (${placeholders})`, ...batch);
+				storage.sql.exec(`DELETE FROM api_keys WHERE api_key IN (${placeholders})`, ...batch);
+			}
+		});
 
 		return jsonResponse({ message: 'API密钥删除成功。' });
 	} catch (error: any) {
-		try { sql.exec('ROLLBACK'); } catch {}
 		console.error('删除API密钥失败:', error);
 		return jsonResponse({ error: error.message || '内部服务器错误' }, 500);
 	}
@@ -237,24 +228,21 @@ export async function handleGetModels(sql: DurableObjectStorage['sql']): Promise
 	}
 }
 
-export async function handleUpsertModel(request: Request, sql: DurableObjectStorage['sql']): Promise<Response> {
+export async function handleUpsertModel(request: Request, storage: DurableObjectStorage): Promise<Response> {
 	try {
 		const { model, keys } = (await request.json()) as { model?: string; keys?: string[] };
 		if (!model) return jsonResponse({ error: 'model 是必填项' }, 400);
 		if (!Array.isArray(keys) || keys.length === 0) return jsonResponse({ error: '至少选择一个密钥' }, 400);
 
-		sql.exec('BEGIN TRANSACTION');
-
-		sql.exec('DELETE FROM key_models WHERE model = ?', model);
-		for (const apiKey of keys) {
-			sql.exec('INSERT INTO key_models (id, model, api_key) VALUES (?, ?, ?)', crypto.randomUUID(), model, apiKey);
-		}
-
-		sql.exec('COMMIT');
+		storage.transactionSync(() => {
+			storage.sql.exec('DELETE FROM key_models WHERE model = ?', model);
+			for (const apiKey of keys) {
+				storage.sql.exec('INSERT INTO key_models (id, model, api_key) VALUES (?, ?, ?)', crypto.randomUUID(), model, apiKey);
+			}
+		});
 
 		return jsonResponse({ message: `模型 "${model}" 已绑定 ${keys.length} 个密钥。` });
 	} catch (error: any) {
-		try { sql.exec('ROLLBACK'); } catch {}
 		return jsonResponse({ error: error.message }, 500);
 	}
 }
@@ -288,33 +276,30 @@ export async function handleGetEndpoints(sql: DurableObjectStorage['sql']): Prom
 	}
 }
 
-export async function handleUpsertEndpoint(request: Request, sql: DurableObjectStorage['sql']): Promise<Response> {
+export async function handleUpsertEndpoint(request: Request, storage: DurableObjectStorage): Promise<Response> {
 	try {
 		const { id, path, models, enabled } = (await request.json()) as any;
 		if (!id || !path) {
 			return jsonResponse({ error: 'id, path 是必填项' }, 400);
 		}
 
-		sql.exec('BEGIN TRANSACTION');
-
-		sql.exec(
-			`INSERT INTO endpoints (id, path, enabled, updated_at)
-			 VALUES (?, ?, ?, unixepoch())
-			 ON CONFLICT(id) DO UPDATE SET path=excluded.path, enabled=excluded.enabled, updated_at=unixepoch()`,
-			id, path, enabled !== false ? 1 : 0
-		);
-		sql.exec('DELETE FROM endpoint_models WHERE endpoint_id = ?', id);
-		if (Array.isArray(models)) {
-			for (const model of models) {
-				sql.exec('INSERT OR IGNORE INTO endpoint_models (id, endpoint_id, model) VALUES (?, ?, ?)', crypto.randomUUID(), id, model);
+		storage.transactionSync(() => {
+			storage.sql.exec(
+				`INSERT INTO endpoints (id, path, enabled, updated_at)
+				 VALUES (?, ?, ?, unixepoch())
+				 ON CONFLICT(id) DO UPDATE SET path=excluded.path, enabled=excluded.enabled, updated_at=unixepoch()`,
+				id, path, enabled !== false ? 1 : 0
+			);
+			storage.sql.exec('DELETE FROM endpoint_models WHERE endpoint_id = ?', id);
+			if (Array.isArray(models)) {
+				for (const model of models) {
+					storage.sql.exec('INSERT OR IGNORE INTO endpoint_models (id, endpoint_id, model) VALUES (?, ?, ?)', crypto.randomUUID(), id, model);
+				}
 			}
-		}
-
-		sql.exec('COMMIT');
+		});
 
 		return jsonResponse({ message: '端点保存成功。' });
 	} catch (error: any) {
-		try { sql.exec('ROLLBACK'); } catch {}
 		return jsonResponse({ error: error.message }, 500);
 	}
 }
@@ -366,69 +351,67 @@ export async function handleBackup(sql: DurableObjectStorage['sql']): Promise<Re
 	}
 }
 
-export async function handleRestore(request: Request, sql: DurableObjectStorage['sql']): Promise<Response> {
+export async function handleRestore(request: Request, storage: DurableObjectStorage): Promise<Response> {
 	try {
 		const data = await request.json() as any;
 		if (!data || !Array.isArray(data.providers) || !Array.isArray(data.keys) || !Array.isArray(data.endpoints)) {
 			return jsonResponse({ error: '格式无效：需要 providers, keys, endpoints 数组' }, 400);
 		}
 
-		sql.exec('BEGIN TRANSACTION');
+		storage.transactionSync(() => {
+			storage.sql.exec('DELETE FROM endpoint_models');
+			storage.sql.exec('DELETE FROM key_models');
+			storage.sql.exec('DELETE FROM key_providers');
+			storage.sql.exec('DELETE FROM api_keys');
+			storage.sql.exec('DELETE FROM providers');
+			storage.sql.exec('DELETE FROM endpoints');
 
-		sql.exec('DELETE FROM endpoint_models');
-		sql.exec('DELETE FROM key_models');
-		sql.exec('DELETE FROM key_providers');
-		sql.exec('DELETE FROM api_keys');
-		sql.exec('DELETE FROM providers');
-		sql.exec('DELETE FROM endpoints');
-
-		for (const p of data.providers) {
-			if (!p.id || !p.type || !p.name || !p.base_url) continue;
-			sql.exec(
-				'INSERT INTO providers (id, type, name, base_url, enabled, config_json) VALUES (?, ?, ?, ?, ?, ?)',
-				p.id, p.type, p.name, p.base_url, p.enabled !== false ? 1 : 0, p.config_json ?? '{}'
-			);
-		}
-
-		for (const k of data.keys) {
-			if (!k.api_key) continue;
-			const keyId = crypto.randomUUID();
-			sql.exec(
-				'INSERT INTO api_keys (id, api_key, enabled, health_check_enabled, key_group) VALUES (?, ?, ?, ?, ?)',
-				keyId, k.api_key, k.enabled !== false ? 1 : 0, k.health_check_enabled !== false ? 1 : 0, k.key_group
-			);
-		}
-
-		if (Array.isArray(data.keyProviders)) {
-			for (const kp of data.keyProviders) {
-				if (!kp.api_key || !kp.provider_id) continue;
-				sql.exec('INSERT INTO key_providers (id, api_key, provider_id) VALUES (?, ?, ?)', crypto.randomUUID(), kp.api_key, kp.provider_id);
+			for (const p of data.providers) {
+				if (!p.id || !p.type || !p.name || !p.base_url) continue;
+				storage.sql.exec(
+					'INSERT INTO providers (id, type, name, base_url, enabled, config_json) VALUES (?, ?, ?, ?, ?, ?)',
+					p.id, p.type, p.name, p.base_url, p.enabled !== false ? 1 : 0, p.config_json ?? '{}'
+				);
 			}
-		}
 
-		if (Array.isArray(data.keyModels)) {
-			for (const km of data.keyModels) {
-				if (!km.model || !km.api_key) continue;
-				sql.exec('INSERT OR IGNORE INTO key_models (id, model, api_key) VALUES (?, ?, ?)', crypto.randomUUID(), km.model, km.api_key);
+			for (const k of data.keys) {
+				if (!k.api_key) continue;
+				const keyId = crypto.randomUUID();
+				storage.sql.exec(
+					'INSERT INTO api_keys (id, api_key, enabled, health_check_enabled, key_group) VALUES (?, ?, ?, ?, ?)',
+					keyId, k.api_key, k.enabled !== false ? 1 : 0, k.health_check_enabled !== false ? 1 : 0, k.key_group
+				);
 			}
-		}
 
-		for (const ep of data.endpoints) {
-			if (!ep.id || !ep.path) continue;
-			sql.exec(
-				'INSERT INTO endpoints (id, path, enabled) VALUES (?, ?, ?)',
-				ep.id, ep.path, ep.enabled !== false ? 1 : 0
-			);
-		}
-
-		if (Array.isArray(data.endpointModels)) {
-			for (const em of data.endpointModels) {
-				if (!em.endpoint_id || !em.model) continue;
-				sql.exec('INSERT INTO endpoint_models (id, endpoint_id, model) VALUES (?, ?, ?)', crypto.randomUUID(), em.endpoint_id, em.model);
+			if (Array.isArray(data.keyProviders)) {
+				for (const kp of data.keyProviders) {
+					if (!kp.api_key || !kp.provider_id) continue;
+					storage.sql.exec('INSERT INTO key_providers (id, api_key, provider_id) VALUES (?, ?, ?)', crypto.randomUUID(), kp.api_key, kp.provider_id);
+				}
 			}
-		}
 
-		sql.exec('COMMIT');
+			if (Array.isArray(data.keyModels)) {
+				for (const km of data.keyModels) {
+					if (!km.model || !km.api_key) continue;
+					storage.sql.exec('INSERT OR IGNORE INTO key_models (id, model, api_key) VALUES (?, ?, ?)', crypto.randomUUID(), km.model, km.api_key);
+				}
+			}
+
+			for (const ep of data.endpoints) {
+				if (!ep.id || !ep.path) continue;
+				storage.sql.exec(
+					'INSERT INTO endpoints (id, path, enabled) VALUES (?, ?, ?)',
+					ep.id, ep.path, ep.enabled !== false ? 1 : 0
+				);
+			}
+
+			if (Array.isArray(data.endpointModels)) {
+				for (const em of data.endpointModels) {
+					if (!em.endpoint_id || !em.model) continue;
+					storage.sql.exec('INSERT INTO endpoint_models (id, endpoint_id, model) VALUES (?, ?, ?)', crypto.randomUUID(), em.endpoint_id, em.model);
+				}
+			}
+		});
 
 		return jsonResponse({
 			message: '恢复成功。',
@@ -438,7 +421,6 @@ export async function handleRestore(request: Request, sql: DurableObjectStorage[
 			endpoints: data.endpoints.length,
 		});
 	} catch (error: any) {
-		try { sql.exec('ROLLBACK'); } catch {}
 		return jsonResponse({ error: error.message }, 500);
 	}
 }

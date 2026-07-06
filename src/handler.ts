@@ -60,29 +60,29 @@ export class LoadBalancer extends DurableObject {
 
 			// Keys
 			if (pathname === '/api/keys' && request.method === 'POST') return handleApiKeys(request, this.ctx.storage.sql);
-			if (pathname === '/api/keys' && request.method === 'PUT') return handleUpdateApiKey(request, this.ctx.storage.sql);
+			if (pathname === '/api/keys' && request.method === 'PUT') return handleUpdateApiKey(request, this.ctx.storage);
 			if (pathname === '/api/keys' && request.method === 'GET') return getAllApiKeys(request, this.ctx.storage.sql);
-			if (pathname === '/api/keys' && request.method === 'DELETE') return handleDeleteApiKeys(request, this.ctx.storage.sql);
+			if (pathname === '/api/keys' && request.method === 'DELETE') return handleDeleteApiKeys(request, this.ctx.storage);
 			if (pathname === '/api/keys' && request.method === 'PATCH') return handleToggleApiKeys(request, this.ctx.storage.sql);
 
 			// Providers
 			if (pathname === '/api/providers' && request.method === 'GET') return handleGetProviders(this.ctx.storage.sql);
 			if (pathname === '/api/providers' && request.method === 'POST') return handleUpsertProvider(request, this.ctx.storage.sql);
-			if (pathname === '/api/providers' && request.method === 'DELETE') return handleDeleteProvider(request, this.ctx.storage.sql);
+			if (pathname === '/api/providers' && request.method === 'DELETE') return handleDeleteProvider(request, this.ctx.storage);
 
 			// Endpoints
 			if (pathname === '/api/endpoints' && request.method === 'GET') return handleGetEndpoints(this.ctx.storage.sql);
-			if (pathname === '/api/endpoints' && request.method === 'POST') return handleUpsertEndpoint(request, this.ctx.storage.sql);
+			if (pathname === '/api/endpoints' && request.method === 'POST') return handleUpsertEndpoint(request, this.ctx.storage);
 			if (pathname === '/api/endpoints' && request.method === 'DELETE') return handleDeleteEndpoint(request, this.ctx.storage.sql);
 
 			// Models
 			if (pathname === '/api/models' && request.method === 'GET') return handleGetModels(this.ctx.storage.sql);
-			if (pathname === '/api/models' && request.method === 'POST') return handleUpsertModel(request, this.ctx.storage.sql);
+			if (pathname === '/api/models' && request.method === 'POST') return handleUpsertModel(request, this.ctx.storage);
 			if (pathname === '/api/models' && request.method === 'DELETE') return handleDeleteModel(request, this.ctx.storage.sql);
 
 			// Backup / Restore
 			if (pathname === '/api/backup' && request.method === 'GET') return handleBackup(this.ctx.storage.sql);
-			if (pathname === '/api/backup/restore' && request.method === 'POST') return handleRestore(request, this.ctx.storage.sql);
+			if (pathname === '/api/backup/restore' && request.method === 'POST') return handleRestore(request, this.ctx.storage);
 		}
 
 		// Internal resolve endpoint (called from Worker)
