@@ -113,14 +113,16 @@ export class AnthropicProvider implements Provider {
 			}
 
 			if (msg.role === 'assistant' && msg.tool_calls?.length) {
-				const toolUseBlocks = msg.tool_calls.map((tc: any) => ({
-					type: 'tool_use',
-					id: tc.id,
-					name: tc.function.name,
-					input: typeof tc.function.arguments === 'string'
-						? JSON.parse(tc.function.arguments)
-						: tc.function.arguments ?? {},
-				}));
+				const toolUseBlocks = msg.tool_calls.map((tc: any) => {
+					let input: unknown = tc.function.arguments ?? {};
+					if (typeof input === 'string') { try { input = JSON.parse(input); } catch {} }
+					return {
+						type: 'tool_use',
+						id: tc.id,
+						name: tc.function.name,
+						input,
+					};
+				});
 				content = Array.isArray(content) ? [...content, ...toolUseBlocks] : toolUseBlocks;
 			}
 
