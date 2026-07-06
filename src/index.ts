@@ -205,6 +205,22 @@ app.all('*', async (c) => {
 		return handleAnthropicMessages(request, { apiKey: clientKey, provider: buildProvider(cfg.providerType, cfg.baseUrl), providerName: cfg.providerName });
 	}
 
+	// GET /v1/models — list all configured models
+	if (pathname.endsWith('/models') && request.method === 'GET') {
+		const resp = await stub.fetch(new Request('http://do/__list-models'));
+		const { models, error } = await resp.json() as any;
+		if (error) {
+			return new Response(JSON.stringify({ error }), {
+				status: 500,
+				headers: { 'Content-Type': 'application/json', ...fixCors({}).headers },
+			});
+		}
+		const data = (models as string[]).map((id: string) => ({ id, object: 'model' }));
+		return new Response(JSON.stringify({ object: 'list', data }), {
+			headers: { 'Content-Type': 'application/json', ...fixCors({}).headers },
+		});
+	}
+
 	// OpenAI routes (chat completions, embeddings → need model binding)
 	if (pathname.endsWith('/chat/completions') || pathname.endsWith('/completions') ||
 		pathname.endsWith('/embeddings')) {

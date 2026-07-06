@@ -1,7 +1,7 @@
 import { DurableObject } from 'cloudflare:workers';
 import { isAdminAuthenticated } from './auth';
 import { fixCors } from './core/utils';
-import { clearResolveCache, resolveProvider } from './core/router';
+import { clearResolveCache, resolveProvider, listModels } from './core/router';
 import { ConfigManager } from './durable/config-manager';
 import { getAbnormalKeyConfigs } from './pool/key-pool';
 import {
@@ -98,6 +98,19 @@ export class LoadBalancer extends DurableObject {
 					endpoint: rp.endpoint,
 					apiKey: rp.apiKey,
 				}), { headers: { 'Content-Type': 'application/json' } });
+			} catch (err: any) {
+				return new Response(JSON.stringify({ error: err.message }), {
+					status: err.status || 500,
+					headers: { 'Content-Type': 'application/json' },
+				});
+			}
+		}
+
+		// Internal: list all models (called from Worker /v1/models)
+		if (pathname === '/__list-models') {
+			try {
+				const models = listModels(this.ctx.storage.sql);
+				return new Response(JSON.stringify({ models }), { headers: { 'Content-Type': 'application/json' } });
 			} catch (err: any) {
 				return new Response(JSON.stringify({ error: err.message }), {
 					status: err.status || 500,

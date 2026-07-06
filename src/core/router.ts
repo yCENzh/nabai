@@ -21,8 +21,12 @@ const resolveCache = new Map<string, CachedResolve>();
 const CACHE_TTL = 300_000;
 const CACHE_MAX = 1000;
 
+const MODELS_CACHE_TTL = 600_000; // 10 min
+let modelsCache: { data: string[]; ts: number } | null = null;
+
 export function clearResolveCache() {
 	resolveCache.clear();
+	modelsCache = null;
 }
 
 export function extractEndpointId(pathname: string): string | null {
@@ -145,4 +149,17 @@ function buildProviderFromType(type: string, baseUrl: string): Provider {
 	if (type === 'openai_compat') return new OpenAICompatProvider(baseUrl);
 	if (type === 'anthropic') return new AnthropicProvider(baseUrl);
 	return new GeminiProvider(baseUrl);
+}
+
+export function listModels(sql: DurableObjectStorage['sql']): string[] {
+	if (modelsCache && Date.now() - modelsCache.ts < MODELS_CACHE_TTL) {
+		return modelsCache.data;
+	}
+
+	const rows = Array.from(sql.exec(
+		'SELECT DISTINCT model FROM key_models ORDER BY model'
+	).raw<any>());
+	const models = rows.map((r: any) => r[0] as string);
+	modelsCache = { data: models, ts: Date.now() };
+	return models;
 }
