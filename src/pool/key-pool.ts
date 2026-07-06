@@ -16,18 +16,21 @@ export async function healthCheckKey(
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json' },
 				body: JSON.stringify({ contents: [{ parts: [{ text: 'hi' }] }] }),
+				signal: AbortSignal.timeout(15_000),
 			});
 		} else if (providerType === 'anthropic') {
 			resp = await fetch(`${cleanUrl}/v1/messages`, {
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json', 'x-api-key': apiKey, 'anthropic-version': '2023-06-01' },
 				body: JSON.stringify({ model, max_tokens: 1, messages: [{ role: 'user', content: 'hi' }] }),
+				signal: AbortSignal.timeout(15_000),
 			});
 		} else {
 			resp = await fetch(`${cleanUrl}/chat/completions`, {
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },
 				body: JSON.stringify({ model, max_tokens: 1, messages: [{ role: 'user', content: 'hi' }] }),
+				signal: AbortSignal.timeout(15_000),
 			});
 		}
 
