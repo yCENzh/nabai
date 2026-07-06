@@ -76,15 +76,15 @@ async function handleCompletions(request: Request, apiKey: string, provider: Pro
 			if (!upstreamResp.ok) {
 				const errText = await upstreamResp.text();
 				console.error('Upstream error:', errText);
-				return new Response(errText || JSON.stringify({ error: 'Upstream error' }), {
-					...fixCors(upstreamResp),
+				return new Response(JSON.stringify({ error: errText || 'Upstream error' }), {
+					headers: { 'Content-Type': 'application/json', ...fixCors(upstreamResp).headers },
 					status: upstreamResp.status,
 				});
 			}
 			const data: any = await upstreamResp.json();
 			if (provider.type === 'gemini' && !data.candidates) {
 				return new Response(JSON.stringify({ error: 'Invalid upstream response: no candidates' }), {
-					...fixCors(upstreamResp),
+					headers: { 'Content-Type': 'application/json', ...fixCors(upstreamResp).headers },
 					status: 500,
 				});
 			}
@@ -101,8 +101,8 @@ async function handleCompletions(request: Request, apiKey: string, provider: Pro
 		if (!response.ok) {
 			const errText = await response.text();
 			console.error('Upstream error:', errText);
-			return new Response(errText || JSON.stringify({ error: 'Upstream error' }), {
-				...fixCors(response),
+			return new Response(JSON.stringify({ error: errText || 'Upstream error' }), {
+				headers: { 'Content-Type': 'application/json', ...fixCors(response).headers },
 				status: response.status,
 			});
 		}
