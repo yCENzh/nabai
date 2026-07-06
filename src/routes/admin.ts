@@ -1,5 +1,15 @@
 // ─── 类型辅助 ───
 
+const VALID_PROVIDER_TYPES = new Set(['gemini', 'openai_compat', 'anthropic']);
+
+function validateId(id: string): boolean {
+	return /^[a-zA-Z0-9_-]+$/.test(id);
+}
+
+function validateUrl(url: string): boolean {
+	try { new URL(url); return true; } catch { return false; }
+}
+
 /** SQL 行类型：providers 表（SELECT 常用列） */
 type ProviderRow = [string, string, string, string, number, string];
 /** SQL 行类型：api_keys 表（SELECT：api_key, enabled, health_check_enabled, key_group） */
@@ -69,6 +79,18 @@ export async function handleUpsertProvider(request: Request, sql: DurableObjectS
 		if (!id || !type || !name || !base_url) {
 			return jsonResponse({ error: 'id, type, name, base_url 是必填项' }, 400);
 		}
+		if (!validateId(id)) {
+			return jsonResponse({ error: 'ID 只能包含英文字母、数字、下划线和连字符' }, 400);
+		}
+		if (!VALID_PROVIDER_TYPES.has(type)) {
+			return jsonResponse({ error: `无效的 Provider 类型，支持：${Array.from(VALID_PROVIDER_TYPES).join(', ')}` }, 400);
+		}
+		if (!validateUrl(base_url)) {
+			return jsonResponse({ error: 'base_url 不是合法的 URL' }, 400);
+		}
+		if (config_json) {
+			try { JSON.parse(config_json); } catch { return jsonResponse({ error: 'config_json 不是合法的 JSON' }, 400); }
+		}
 		sql.exec(
 			`INSERT INTO providers (id, type, name, base_url, enabled, config_json, updated_at)
 			 VALUES (?, ?, ?, ?, ?, ?, unixepoch())
@@ -130,6 +152,7 @@ export async function handleApiKeys(request: Request, sql: DurableObjectStorage[
 		let added = 0;
 		let skipped = 0;
 		for (const key of keys) {
+			if (typeof key !== 'string' || !key.trim()) continue;
 			const existing = Array.from(sql.exec('SELECT 1 FROM api_keys WHERE api_key = ?', key).raw<[number]>());
 			if (existing.length > 0) { skipped++; continue; }
 			const keyId = crypto.randomUUID();
@@ -332,6 +355,9 @@ export async function handleUpsertEndpoint(request: Request, storage: DurableObj
 		if (!id || !path) {
 			return jsonResponse({ error: 'id, path 是必填项' }, 400);
 		}
+		if (!validateId(id)) {
+			return jsonResponse({ error: 'ID 只能包含英文字母、数字、下划线和连字符' }, 400);
+		}
 
 		storage.transactionSync(() => {
 			storage.sql.exec(
@@ -406,6 +432,15 @@ export async function handleRestore(request: Request, storage: DurableObjectStor
 		const data = await request.json() as BackupData;
 		if (!data || !Array.isArray(data.providers) || !Array.isArray(data.keys) || !Array.isArray(data.endpoints)) {
 			return jsonResponse({ error: '格式无效：需要 providers, keys, endpoints 数组' }, 400);
+		}
+		if (data.providers.some(p => !p.id || !p.type || !p.name || !p.base_url)) {
+			return jsonResponse({ error: 'providers 中包含不完整的条目' }, 400);
+		}
+		if (data.keys.some(k => !k.api_key)) {
+			return jsonResponse({ error: 'keys 中包含不完整的条目' }, 400);
+		}
+		if (data.endpoints.some(ep => !ep.id || !ep.path)) {
+			return jsonResponse({ error: 'endpoints 中包含不完整的条目' }, 400);
 		}
 
 		storage.transactionSync(() => {
