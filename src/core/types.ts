@@ -1,10 +1,16 @@
 export interface CanonicalMessage {
 	role: 'system' | 'user' | 'assistant' | 'tool';
-	content: string | Array<{ type: string; [k: string]: unknown }>;
+	content: string | ContentBlock[];
 	name?: string;
 	tool_call_id?: string;
 	tool_calls?: Array<{ id: string; type: string; function: { name: string; arguments: string } }>;
 }
+
+export type ContentBlock =
+	| { type: 'text'; text: string }
+	| { type: 'image_url'; image_url: { url: string; detail?: string } }
+	| { type: 'input_audio'; input_audio: { format: string; data: string } }
+	| { type: 'input_json'; json: { id?: string; name?: string; arguments?: unknown; tool_call_id?: string; result?: unknown } };
 
 export interface CanonicalTool {
 	type: 'function';

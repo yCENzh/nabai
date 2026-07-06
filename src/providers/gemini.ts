@@ -1,5 +1,5 @@
 import { HttpError, BASE_URL, API_VERSION, makeHeaders, streamSSELines } from '../core/utils';
-import type { CanonicalRequest, CanonicalResponse, CanonicalStreamEvent } from '../core/types';
+import type { CanonicalRequest, CanonicalResponse, CanonicalStreamEvent, ContentBlock, CanonicalMessage } from '../core/types';
 import type { Provider, ProviderContext } from './base';
 
 const HARM_CATEGORIES = [
@@ -64,7 +64,7 @@ export function transformConfig(req: any) {
 	return cfg;
 }
 
-export async function transformMessages(messages: any[]) {
+export async function transformMessages(messages: CanonicalMessage[]) {
 	if (!messages) {
 		return {};
 	}
@@ -97,7 +97,7 @@ export async function transformMessages(messages: any[]) {
 	return { system_instruction, contents };
 }
 
-export async function transformMsg({ content }: any) {
+export async function transformMsg({ content }: { content: string | ContentBlock[] }) {
 	const parts = [];
 	if (!Array.isArray(content)) {
 		parts.push({ text: content });

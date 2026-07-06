@@ -76,7 +76,7 @@ export async function resolveProvider(sql: DurableObjectStorage['sql'], endpoint
 
 	const epRows = Array.from(sql.exec(
 		'SELECT id, path, enabled FROM endpoints WHERE id = ?', endpointId
-	).raw<any>());
+	).raw<[string, string, number]>());
 	if (epRows.length === 0) {
 		throw new HttpError(
 			endpointId === 'default'
@@ -93,7 +93,7 @@ export async function resolveProvider(sql: DurableObjectStorage['sql'], endpoint
 
 	const emRows = Array.from(sql.exec(
 		'SELECT 1 FROM endpoint_models WHERE endpoint_id = ? AND model = ?', endpointId, model
-	).raw<any>());
+	).raw<[number]>());
 	if (emRows.length === 0) {
 		throw new HttpError(`Model "${model}" is not bound to endpoint "${endpointId}".`, 403);
 	}
@@ -106,13 +106,13 @@ export async function resolveProvider(sql: DurableObjectStorage['sql'], endpoint
 		JOIN key_providers kp ON kp.api_key = k.api_key
 		JOIN providers p ON p.id = kp.provider_id
 		WHERE k.enabled = 1 AND k.key_group = 'normal' AND p.enabled = 1
-	`, model).raw<any>());
+	`, model).raw<[string, string, string, string, string]>());
 
 	if (rows.length === 0) {
 		throw new HttpError(`No available key for model "${model}" on endpoint "${endpointId}".`, 503);
 	}
 
-	const keys: CachedKeyOption[] = rows.map((row: any) => {
+	const keys: CachedKeyOption[] = rows.map((row) => {
 		let forwardClientKey = false;
 		try { forwardClientKey = JSON.parse(row[4]).forward_client_key === true; } catch {}
 		return {
@@ -158,8 +158,8 @@ export function listModels(sql: DurableObjectStorage['sql']): string[] {
 
 	const rows = Array.from(sql.exec(
 		'SELECT DISTINCT model FROM key_models ORDER BY model'
-	).raw<any>());
-	const models = rows.map((r: any) => r[0] as string);
+	).raw<[string]>());
+	const models = rows.map((r: [string]) => r[0]);
 	modelsCache = { data: models, ts: Date.now() };
 	return models;
 }

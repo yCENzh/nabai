@@ -82,7 +82,7 @@ export class LoadBalancer extends DurableObject {
 		// Internal resolve endpoint (called from Worker)
 		if (pathname === '/__resolve') {
 			try {
-				const body = await request.json() as any;
+				const body = await request.json() as { endpointId: string; model?: string };
 				const rp = await resolveProvider(this.ctx.storage.sql, body.endpointId, body.model);
 				return new Response(JSON.stringify({
 					providerType: rp.provider.type,
@@ -130,7 +130,10 @@ export class LoadBalancer extends DurableObject {
 		if (pathname === '/__resolve-key-configs' && request.method === 'POST') {
 			try {
 				const { keys } = await request.json() as { keys: string[] };
-				const configs: any[] = [];
+				const configs: Array<{
+					api_key: string; providerType: string; providerName: string;
+					baseUrl: string; models: string[];
+				}> = [];
 				if (keys && keys.length > 0) {
 					const batchSize = 500;
 					for (let i = 0; i < keys.length; i += batchSize) {
@@ -144,13 +147,13 @@ export class LoadBalancer extends DurableObject {
 							LEFT JOIN key_models m ON m.api_key = k.api_key
 							WHERE p.enabled = 1 AND k.api_key IN (${ph})
 							GROUP BY k.api_key, p.type, p.name, p.base_url
-						`, ...batch).raw<any>()) {
+						`, ...batch).raw<[string, string, string, string, string | null]>()) {
 							configs.push({
 								api_key: row[0],
 								providerType: row[1],
 								providerName: row[2],
 								baseUrl: row[3],
-								models: row[4] ? (row[4] as string).split(',') : [],
+								models: row[4] ? row[4].split(',') : [],
 							});
 						}
 					}
@@ -162,7 +165,7 @@ export class LoadBalancer extends DurableObject {
 					const ph = batch.map(() => '?').join(',');
 					for (const r of this.ctx.storage.sql.exec(
 						`SELECT api_key, key_group FROM api_keys WHERE api_key IN (${ph})`, ...batch
-					).raw<any>()) {
+					).raw<[string, string]>()) {
 						groups.push({ api_key: r[0] as string, key_group: r[1] as string });
 					}
 				}

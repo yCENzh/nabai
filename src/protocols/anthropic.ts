@@ -32,9 +32,11 @@ export class AnthropicProtocolAdapter implements ProtocolAdapter {
 					} else if (block.type === 'image') {
 						content.push({
 							type: 'image_url',
-							url: block.source?.type === 'base64'
-								? `data:${block.source.media_type};base64,${block.source.data}`
-								: block.source?.url ?? '',
+							image_url: {
+								url: block.source?.type === 'base64'
+									? `data:${block.source.media_type};base64,${block.source.data}`
+									: block.source?.url ?? '',
+							},
 						});
 					} else if (block.type === 'tool_use') {
 						content.push({ type: 'input_json', json: { id: block.id, name: block.name, arguments: block.input } });

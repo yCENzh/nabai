@@ -1,9 +1,58 @@
+// ─── 类型辅助 ───
+
+/** SQL 行类型：providers 表（SELECT 常用列） */
+type ProviderRow = [string, string, string, string, number, string];
+/** SQL 行类型：api_keys 表（SELECT：api_key, enabled, health_check_enabled, key_group） */
+type ApiKeyRow = [string, number, number, string];
+/** SQL 行类型：endpoints 表（SELECT 常用列） */
+type EndpointRow = [string, string, number];
+/** SQL 行类型：key_providers / key_models / endpoint_models 关联表 */
+type KeyRefRow = [string, string];
+/** SQL 行类型：聚合查询（GROUP_CONCAT） */
+type AggRow = [string, string | null];
+
+// ─── 请求体类型 ───
+
+interface UpsertProviderBody {
+	id: string; type: string; name: string; base_url: string;
+	enabled?: boolean; config_json?: string;
+}
+interface ApiKeysBody {
+	keys: string[]; provider_ids?: string[]; health_check_enabled?: boolean;
+}
+interface UpdateApiKeyBody {
+	api_key: string; provider_ids?: string[]; health_check_enabled?: boolean;
+}
+interface ToggleApiKeysBody {
+	keys: string[]; enabled: boolean;
+}
+interface DeleteBody {
+	id?: string;
+}
+interface DeleteKeysBody {
+	keys: string[];
+}
+interface UpsertModelBody {
+	model?: string; keys?: string[];
+}
+interface UpsertEndpointBody {
+	id?: string; path?: string; models?: string[]; enabled?: boolean;
+}
+interface BackupData {
+	providers: Array<{ id: string; type: string; name: string; base_url: string; enabled: boolean; config_json: string }>;
+	keys: Array<{ api_key: string; enabled: boolean; health_check_enabled: boolean; key_group: string }>;
+	endpoints: Array<{ id: string; path: string; enabled: boolean }>;
+	keyProviders?: Array<{ api_key: string; provider_id: string }>;
+	keyModels?: Array<{ model: string; api_key: string }>;
+	endpointModels?: Array<{ endpoint_id: string; model: string }>;
+}
+
 // ─── Providers ───
 
 export async function handleGetProviders(sql: DurableObjectStorage['sql']): Promise<Response> {
 	try {
-		const results = sql.exec('SELECT id, type, name, base_url, enabled, config_json FROM providers ORDER BY created_at').raw<any>();
-		const providers = Array.from(results).map((row: any) => ({
+		const results = sql.exec('SELECT id, type, name, base_url, enabled, config_json FROM providers ORDER BY created_at').raw<ProviderRow>();
+		const providers = Array.from(results).map((row: ProviderRow) => ({
 			id: row[0], type: row[1], name: row[2], base_url: row[3],
 			enabled: row[4] === 1, config_json: row[5],
 		}));
@@ -15,8 +64,8 @@ export async function handleGetProviders(sql: DurableObjectStorage['sql']): Prom
 
 export async function handleUpsertProvider(request: Request, sql: DurableObjectStorage['sql']): Promise<Response> {
 	try {
-		const body = await request.json();
-		const { id, type, name, base_url, enabled, config_json } = body as any;
+		const body = await request.json() as UpsertProviderBody;
+		const { id, type, name, base_url, enabled, config_json } = body;
 		if (!id || !type || !name || !base_url) {
 			return jsonResponse({ error: 'id, type, name, base_url 是必填项' }, 400);
 		}
@@ -34,14 +83,14 @@ export async function handleUpsertProvider(request: Request, sql: DurableObjectS
 
 export async function handleDeleteProvider(request: Request, storage: DurableObjectStorage): Promise<Response> {
 	try {
-		const { id } = (await request.json()) as any;
+		const { id } = await request.json() as DeleteBody;
 		if (!id) return jsonResponse({ error: 'id 是必填项' }, 400);
 
 		const soleKeys = Array.from(storage.sql.exec(`
 			SELECT kp.api_key FROM key_providers kp
 			WHERE kp.provider_id = ?
 			AND (SELECT COUNT(*) FROM key_providers kp2 WHERE kp2.api_key = kp.api_key) = 1
-		`, id).raw<any>()).map((r: any) => r[0]);
+		`, id).raw<KeyRefRow>()).map((r: KeyRefRow) => r[0]);
 
 		storage.transactionSync(() => {
 			if (soleKeys.length > 0) {
@@ -81,7 +130,7 @@ export async function handleApiKeys(request: Request, sql: DurableObjectStorage[
 		let added = 0;
 		let skipped = 0;
 		for (const key of keys) {
-			const existing = Array.from(sql.exec('SELECT 1 FROM api_keys WHERE api_key = ?', key).raw<any>());
+			const existing = Array.from(sql.exec('SELECT 1 FROM api_keys WHERE api_key = ?', key).raw<[number]>());
 			if (existing.length > 0) { skipped++; continue; }
 			const keyId = crypto.randomUUID();
 			sql.exec('INSERT INTO api_keys (id, api_key, health_check_enabled) VALUES (?, ?, ?)', keyId, key, hce);
@@ -177,7 +226,7 @@ export async function getAllApiKeys(request: Request, sql: DurableObjectStorage[
 		const pageSize = parseInt(url.searchParams.get('pageSize') || '50', 10);
 		const offset = (page - 1) * pageSize;
 
-		const totalResult = sql.exec('SELECT COUNT(*) as count FROM api_keys').raw<any>();
+		const totalResult = sql.exec('SELECT COUNT(*) as count FROM api_keys').raw<[number]>();
 		const totalArray = Array.from(totalResult);
 		const total = totalArray.length > 0 ? totalArray[0][0] : 0;
 
@@ -191,9 +240,9 @@ export async function getAllApiKeys(request: Request, sql: DurableObjectStorage[
 				   GROUP BY k.api_key
 				   ORDER BY k.api_key
 				   LIMIT ? OFFSET ?`, pageSize, offset)
-			.raw<any>();
+			.raw<[string, string, number, number, string | null, string | null]>();
 		const keys = results
-			? Array.from(results).map((row: any) => ({
+			? Array.from(results).map((row) => ({
 					api_key: row[0], key_group: row[1],
 					health_check_enabled: row[2] === 1, enabled: row[3] === 1,
 					provider_ids: row[4] ? row[4].split(',') : [],
@@ -217,8 +266,8 @@ export async function handleGetModels(sql: DurableObjectStorage['sql']): Promise
 			FROM key_models m
 			GROUP BY m.model
 			ORDER BY MIN(m.created_at)
-		`).raw<any>());
-		const models = rows.map((row: any) => ({
+		`).raw<AggRow>());
+		const models = rows.map((row: AggRow) => ({
 			model: row[0],
 			keys: row[1] ? row[1].split(',') : [],
 		}));
@@ -263,12 +312,12 @@ export async function handleDeleteModel(request: Request, sql: DurableObjectStor
 
 export async function handleGetEndpoints(sql: DurableObjectStorage['sql']): Promise<Response> {
 	try {
-		const endpoints = Array.from(sql.exec('SELECT id, path, enabled FROM endpoints ORDER BY created_at').raw<any>())
-			.map((row: any) => ({ id: row[0], path: row[1], enabled: row[2] === 1 }));
+		const endpoints: Array<{ id: string; path: string; enabled: boolean; models: string[] }> = Array.from(sql.exec('SELECT id, path, enabled FROM endpoints ORDER BY created_at').raw<EndpointRow>())
+			.map((row) => ({ id: row[0], path: row[1], enabled: row[2] === 1, models: [] }));
 		for (const ep of endpoints) {
-			const models = Array.from(sql.exec('SELECT model FROM endpoint_models WHERE endpoint_id = ?', ep.id).raw<any>())
-				.map((r: any) => r[0]);
-			(ep as any).models = models;
+			const models = Array.from(sql.exec('SELECT model FROM endpoint_models WHERE endpoint_id = ?', ep.id).raw<[string]>())
+				.map((r: [string]) => r[0]);
+			ep.models = models;
 		}
 		return jsonResponse({ endpoints });
 	} catch (error: any) {
@@ -278,7 +327,7 @@ export async function handleGetEndpoints(sql: DurableObjectStorage['sql']): Prom
 
 export async function handleUpsertEndpoint(request: Request, storage: DurableObjectStorage): Promise<Response> {
 	try {
-		const { id, path, models, enabled } = (await request.json()) as any;
+		const { id, path, models, enabled } = await request.json() as UpsertEndpointBody;
 		if (!id || !path) {
 			return jsonResponse({ error: 'id, path 是必填项' }, 400);
 		}
@@ -306,7 +355,7 @@ export async function handleUpsertEndpoint(request: Request, storage: DurableObj
 
 export async function handleDeleteEndpoint(request: Request, sql: DurableObjectStorage['sql']): Promise<Response> {
 	try {
-		const { id } = (await request.json()) as any;
+		const { id } = await request.json() as DeleteBody;
 		if (!id) return jsonResponse({ error: 'id 是必填项' }, 400);
 		if (id === 'default') return jsonResponse({ error: '默认端点不可删除' }, 400);
 		sql.exec('DELETE FROM endpoint_models WHERE endpoint_id = ?', id);
@@ -322,28 +371,28 @@ export async function handleDeleteEndpoint(request: Request, sql: DurableObjectS
 export async function handleBackup(sql: DurableObjectStorage['sql']): Promise<Response> {
 	try {
 		const providers = Array.from(
-			sql.exec('SELECT id, type, name, base_url, enabled, config_json FROM providers ORDER BY created_at').raw<any>()
-		).map((r: any) => ({ id: r[0], type: r[1], name: r[2], base_url: r[3], enabled: r[4] === 1, config_json: r[5] }));
+			sql.exec('SELECT id, type, name, base_url, enabled, config_json FROM providers ORDER BY created_at').raw<ProviderRow>()
+		).map((r: ProviderRow) => ({ id: r[0], type: r[1], name: r[2], base_url: r[3], enabled: r[4] === 1, config_json: r[5] }));
 
 		const keys = Array.from(
-			sql.exec('SELECT api_key, enabled, health_check_enabled, key_group FROM api_keys ORDER BY created_at').raw<any>()
-		).map((r: any) => ({ api_key: r[0], enabled: r[1] === 1, health_check_enabled: r[2] === 1, key_group: r[3] }));
+			sql.exec('SELECT api_key, enabled, health_check_enabled, key_group FROM api_keys ORDER BY created_at').raw<ApiKeyRow>()
+		).map((r: ApiKeyRow) => ({ api_key: r[0], enabled: r[1] === 1, health_check_enabled: r[2] === 1, key_group: r[3] }));
 
 		const keyProviders = Array.from(
-			sql.exec('SELECT api_key, provider_id FROM key_providers ORDER BY created_at').raw<any>()
-		).map((r: any) => ({ api_key: r[0], provider_id: r[1] }));
+			sql.exec('SELECT api_key, provider_id FROM key_providers ORDER BY created_at').raw<KeyRefRow>()
+		).map((r: KeyRefRow) => ({ api_key: r[0], provider_id: r[1] }));
 
 		const keyModels = Array.from(
-			sql.exec('SELECT model, api_key FROM key_models ORDER BY created_at').raw<any>()
-		).map((r: any) => ({ model: r[0], api_key: r[1] }));
+			sql.exec('SELECT model, api_key FROM key_models ORDER BY created_at').raw<KeyRefRow>()
+		).map((r: KeyRefRow) => ({ model: r[0], api_key: r[1] }));
 
 		const endpointModels = Array.from(
-			sql.exec('SELECT endpoint_id, model FROM endpoint_models ORDER BY created_at').raw<any>()
-		).map((r: any) => ({ endpoint_id: r[0], model: r[1] }));
+			sql.exec('SELECT endpoint_id, model FROM endpoint_models ORDER BY created_at').raw<KeyRefRow>()
+		).map((r: KeyRefRow) => ({ endpoint_id: r[0], model: r[1] }));
 
 		const endpoints = Array.from(
-			sql.exec('SELECT id, path, enabled FROM endpoints ORDER BY created_at').raw<any>()
-		).map((r: any) => ({ id: r[0], path: r[1], enabled: r[2] === 1 }));
+			sql.exec('SELECT id, path, enabled FROM endpoints ORDER BY created_at').raw<EndpointRow>()
+		).map((r: EndpointRow) => ({ id: r[0], path: r[1], enabled: r[2] === 1 }));
 
 		return jsonResponse({ providers, keys, keyProviders, keyModels, endpointModels, endpoints, exported_at: new Date().toISOString() });
 	} catch (error: any) {
@@ -353,7 +402,7 @@ export async function handleBackup(sql: DurableObjectStorage['sql']): Promise<Re
 
 export async function handleRestore(request: Request, storage: DurableObjectStorage): Promise<Response> {
 	try {
-		const data = await request.json() as any;
+		const data = await request.json() as BackupData;
 		if (!data || !Array.isArray(data.providers) || !Array.isArray(data.keys) || !Array.isArray(data.endpoints)) {
 			return jsonResponse({ error: '格式无效：需要 providers, keys, endpoints 数组' }, 400);
 		}
@@ -427,7 +476,7 @@ export async function handleRestore(request: Request, storage: DurableObjectStor
 
 // ─── Helpers ───
 
-function jsonResponse(data: any, status = 200): Response {
+function jsonResponse(data: Record<string, unknown>, status = 200): Response {
 	return new Response(JSON.stringify(data), {
 		status,
 		headers: { 'Content-Type': 'application/json' },

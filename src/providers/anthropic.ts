@@ -1,5 +1,5 @@
 import { streamSSELines, STREAM_TIMEOUT_MS } from '../core/utils';
-import type { CanonicalRequest, CanonicalResponse, CanonicalStreamEvent } from '../core/types';
+import type { CanonicalRequest, CanonicalResponse, CanonicalStreamEvent, ContentBlock } from '../core/types';
 import type { Provider, ProviderContext } from './base';
 
 const ANTHROPIC_VERSION = '2023-06-01';
@@ -88,9 +88,9 @@ export class AnthropicProvider implements Provider {
 				content = msg.content;
 			} else if (Array.isArray(msg.content)) {
 				content = msg.content.map(block => {
-					if (block.type === 'text') return { type: 'text', text: (block as any).text };
+					if (block.type === 'text') return { type: 'text', text: block.text };
 					if (block.type === 'image_url') {
-						const url = (block as any).url ?? '';
+						const url = block.image_url?.url ?? '';
 						if (url.startsWith('data:')) {
 							const match = url.match(/^data:([^;]+);base64,(.+)$/);
 							if (match) return { type: 'image', source: { type: 'base64', media_type: match[1], data: match[2] } };
@@ -98,7 +98,7 @@ export class AnthropicProvider implements Provider {
 						return { type: 'image', source: { type: 'url', url } };
 					}
 					if (block.type === 'input_json') {
-						const json = (block as any).json;
+						const json = block.json;
 						if (json.id && json.name) {
 							return { type: 'tool_use', id: json.id, name: json.name, input: json.arguments ?? {} };
 						}

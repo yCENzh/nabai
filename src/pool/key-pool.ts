@@ -49,7 +49,7 @@ export function getAbnormalKeyConfigs(sql: DurableObjectStorage['sql']): Array<{
 		JOIN providers p ON p.id = kp.provider_id
 		JOIN key_models m ON m.api_key = k.api_key
 		WHERE k.key_group = 'abnormal' AND k.health_check_enabled = 1 AND k.enabled = 1 AND p.enabled = 1
-	`).raw<any>()).map(row => ({
+	`).raw<[string, string, string, string, string]>()).map(row => ({
 		apiKey: row[0] as string,
 		providerType: row[1] as string,
 		providerName: row[2] as string,

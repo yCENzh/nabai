@@ -4,7 +4,13 @@ import { OpenAIProtocolAdapter } from '../protocols/openai';
 
 const adapter = new OpenAIProtocolAdapter();
 
-async function handleEmbeddings(req: any, apiKey: string, baseUrl: string, providerType: string) {
+interface EmbeddingsRequest {
+	model?: string;
+	input?: string | string[];
+	dimensions?: number;
+}
+
+async function handleEmbeddings(req: EmbeddingsRequest, apiKey: string, baseUrl: string, providerType: string) {
 	if (typeof req.model !== 'string') {
 		throw new HttpError('model is not specified', 400);
 	}
@@ -13,13 +19,13 @@ async function handleEmbeddings(req: any, apiKey: string, baseUrl: string, provi
 
 	if (providerType === 'gemini') {
 		const model = 'models/' + modelName;
-		const inputs = Array.isArray(req.input) ? req.input : [req.input];
+		const inputs = (Array.isArray(req.input) ? req.input : [req.input]).filter((x): x is string => x != null);
 
 		const response = await fetch(`${baseUrl.replace(/\/+$/, '')}/v1beta/${model}:batchEmbedContents`, {
 			method: 'POST',
 			headers: makeHeaders(apiKey, { 'Content-Type': 'application/json' }),
 			body: JSON.stringify({
-				requests: inputs.map((text: string) => ({
+				requests: inputs.map(text => ({
 					model,
 					content: { parts: { text } },
 					outputDimensionality: req.dimensions,
@@ -29,14 +35,14 @@ async function handleEmbeddings(req: any, apiKey: string, baseUrl: string, provi
 
 		let responseBody: BodyInit | null = response.body;
 		if (response.ok) {
-			const { embeddings } = JSON.parse(await response.text());
+			const body: { embeddings?: Array<{ values?: number[] }> } = JSON.parse(await response.text());
 			responseBody = JSON.stringify(
 				{
 					object: 'list',
-					data: embeddings.map(({ values }: any, index: number) => ({
+					data: (body.embeddings ?? []).map((item, index: number) => ({
 						object: 'embedding',
 						index,
-						embedding: values,
+						embedding: item.values,
 					})),
 					model: modelName,
 				},

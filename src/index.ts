@@ -16,13 +16,21 @@ function getDOStub(c: { env: Env }): DurableObjectStub {
 	return c.env.LOAD_BALANCER.get(id, { locationHint: 'wnam' });
 }
 
-async function resolveConfig(stub: DurableObjectStub, endpointId: string, model?: string): Promise<{ data: any; status: number }> {
+async function resolveConfig(stub: DurableObjectStub, endpointId: string, model?: string): Promise<{ data: {
+	providerType: string; providerName: string; baseUrl: string;
+	forwardClientKey: boolean; endpoint: { id: string; path: string; enabled: boolean } | null;
+	apiKey?: string; error?: string;
+}; status: number }> {
 	const resp = await stub.fetch(new Request('http://do/__resolve', {
 		method: 'POST',
 		headers: { 'Content-Type': 'application/json' },
 		body: JSON.stringify({ endpointId, model }),
 	}));
-	const data = await resp.json();
+	const data = await resp.json() as {
+		providerType: string; providerName: string; baseUrl: string;
+		forwardClientKey: boolean; endpoint: { id: string; path: string; enabled: boolean } | null;
+		apiKey?: string; error?: string;
+	};
 	return { data, status: resp.status };
 }
 
@@ -89,13 +97,16 @@ app.all('*', async (c) => {
 		const configResp = await stub.fetch(new Request('http://do/__resolve-key-configs', {
 			method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ keys }),
 		}));
-		const { configs, groups } = await configResp.json() as any;
+		const { configs, groups } = await configResp.json() as {
+			configs?: Array<{ api_key: string; providerType: string; providerName: string; baseUrl: string; models: string[] }>;
+			groups?: Array<{ api_key: string; key_group: string }>;
+		};
 
-		const providerMap = new Map<string, any>();
-		for (const cfg of configs || []) {
+		const providerMap = new Map<string, { api_key: string; providerType: string; providerName: string; baseUrl: string; models: string[] }>();
+		for (const cfg of configs ?? []) {
 			if (!providerMap.has(cfg.api_key)) providerMap.set(cfg.api_key, cfg);
 		}
-		const groupMap = new Map<string, string>((groups || []).map((g: any) => [g.api_key, g.key_group]));
+		const groupMap = new Map<string, string>((groups ?? []).map((g) => [g.api_key, g.key_group]));
 
 		const checkResults = await Promise.all(
 			keys.map(async (key) => {
@@ -161,7 +172,7 @@ app.all('*', async (c) => {
 		let model: string | undefined;
 		try {
 			const cloned = request.clone();
-			const body: any = await cloned.json();
+			const body: { model?: string } = await cloned.json();
 			model = body?.model;
 		} catch {}
 
@@ -198,7 +209,7 @@ app.all('*', async (c) => {
 	// GET /v1/models — list all configured models
 	if (pathname.endsWith('/models') && request.method === 'GET') {
 		const resp = await stub.fetch(new Request('http://do/__list-models'));
-		const { models, error } = await resp.json() as any;
+		const { models, error } = await resp.json() as { models?: string[]; error?: string };
 		if (error) {
 			return new Response(JSON.stringify({ error }), {
 				status: 500,
@@ -217,7 +228,7 @@ app.all('*', async (c) => {
 		let model: string | undefined;
 		try {
 			const cloned = request.clone();
-			const body: any = await cloned.json();
+			const body: { model?: string } = await cloned.json();
 			model = body?.model;
 		} catch {}
 
@@ -266,7 +277,7 @@ async function scheduledHandler(controller: ScheduledController, env: Env, ctx: 
 		const stub = env.LOAD_BALANCER.get(id, { locationHint: 'wnam' });
 
 		const resp = await stub.fetch(new Request('http://do/__resolve-abnormal-keys'));
-		const { rows } = await resp.json() as any;
+		const { rows } = await resp.json() as { rows?: Array<{ apiKey: string; providerType: string; providerName: string; baseUrl: string; model: string }> };
 		if (!rows || rows.length === 0) return;
 
 		const updates: Array<{ api_key: string; key_group: string }> = [];

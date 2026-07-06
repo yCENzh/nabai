@@ -1,5 +1,5 @@
 import { streamSSELines, STREAM_TIMEOUT_MS } from '../core/utils';
-import type { CanonicalRequest, CanonicalResponse, CanonicalStreamEvent } from '../core/types';
+import type { CanonicalRequest, CanonicalResponse, CanonicalStreamEvent, ContentBlock } from '../core/types';
 import type { Provider, ProviderContext } from './base';
 
 /**
@@ -44,11 +44,11 @@ export class OpenAICompatProvider implements Provider {
 				const toolCalls: any[] = [];
 				const textParts: string[] = [];
 				for (const block of m.content) {
-					if (block.type === 'input_json' && (block as any).json?.id && (block as any).json?.name) {
-						const j = (block as any).json;
+					if (block.type === 'input_json' && block.json?.id && block.json?.name) {
+						const j = block.json;
 						toolCalls.push({ id: j.id, type: 'function', function: { name: j.name, arguments: typeof j.arguments === 'string' ? j.arguments : JSON.stringify(j.arguments ?? {}) } });
 					} else if (block.type === 'text') {
-						textParts.push((block as any).text);
+						textParts.push(block.text);
 					}
 				}
 				if (toolCalls.length > 0) {
@@ -58,10 +58,10 @@ export class OpenAICompatProvider implements Provider {
 				}
 			} else if (m.role === 'user' && Array.isArray(m.content)) {
 				const toolResults: any[] = [];
-				const otherBlocks: any[] = [];
+				const otherBlocks: ContentBlock[] = [];
 				for (const block of m.content) {
-					if (block.type === 'input_json' && (block as any).json?.tool_call_id) {
-						const j = (block as any).json;
+					if (block.type === 'input_json' && block.json?.tool_call_id) {
+						const j = block.json;
 						toolResults.push({ role: 'tool', tool_call_id: j.tool_call_id, content: typeof j.result === 'string' ? j.result : JSON.stringify(j.result ?? '') });
 					} else {
 						otherBlocks.push(block);
