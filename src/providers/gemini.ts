@@ -131,7 +131,7 @@ export async function transformMsg({ content }: { content: string | ContentBlock
 	return parts;
 }
 
-export async function parseImg(url: any) {
+export async function parseImg(url: string) {
 	let mimeType, data;
 	if (url.startsWith('http://') || url.startsWith('https://')) {
 		try {
@@ -141,18 +141,23 @@ export async function parseImg(url: any) {
 			}
 			mimeType = response.headers.get('content-type');
 			const buf = new Uint8Array(await response.arrayBuffer());
+			// 分块编码，避免逐字节循环和 spread 栈溢出
 			let bin = '';
-			for (let i = 0; i < buf.length; i++) bin += String.fromCharCode(buf[i]);
+			const chunk = 8192;
+			for (let i = 0; i < buf.length; i += chunk) {
+				bin += String.fromCharCode(...buf.subarray(i, i + chunk));
+			}
 			data = btoa(bin);
 		} catch (err) {
 			throw new Error('Error fetching image: ' + (err as Error).message);
 		}
 	} else {
 		const match = url.match(/^data:(?<mimeType>.*?)(;base64)?,(?<data>.*)$/);
-		if (!match) {
+		if (!match || !match.groups) {
 			throw new HttpError('Invalid image data: ' + url, 400);
 		}
-		({ mimeType, data } = match.groups);
+		mimeType = match.groups.mimeType;
+		data = match.groups.data;
 	}
 	return {
 		inlineData: {
@@ -214,18 +219,9 @@ export function parseThinkingParts(parts: any[]): { reasoningContent: string; fi
 			part.thoughtToken ||
 			part.thought ||
 			part.thoughtTokens ||
-			(part.executableCode && part.executableCode.language === 'thought') ||
-			(part.text && (part.text.startsWith('<thinking>') || part.text.startsWith('思考：') || part.text.startsWith('Thinking:')));
+			(part.executableCode && part.executableCode.language === 'thought');
 		if (isThought) {
-			let cleanText = part.text;
-			if (cleanText.startsWith('<thinking>')) {
-				cleanText = cleanText.replace('<thinking>', '').replace('</thinking>', '');
-			} else if (cleanText.startsWith('思考：')) {
-				cleanText = cleanText.replace('思考：', '');
-			} else if (cleanText.startsWith('Thinking:')) {
-				cleanText = cleanText.replace('Thinking:', '');
-			}
-			reasoningContent += cleanText;
+			reasoningContent += part.text;
 		} else {
 			finalContent += part.text;
 		}
