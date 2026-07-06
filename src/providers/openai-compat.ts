@@ -156,7 +156,7 @@ async function* openaiStreamToCanonical(response: Response): AsyncIterable<Canon
 			if (fr) finishReason = fr;
 			if (u) usage = u;
 			yield* events;
-		} catch {}
+		} catch { console.warn('[stream] Invalid JSON chunk:', json); }
 	}
 	yield { type: 'done', finishReason: finishReason ?? 'stop', usage };
 }

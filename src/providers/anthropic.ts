@@ -224,7 +224,7 @@ async function* anthropicStreamToCanonical(response: Response): AsyncIterable<Ca
 			if (result.usage) usage = { ...usage, ...result.usage };
 			yield* result.events;
 			if (result.isError) return;
-		} catch {}
+		} catch { console.warn('[stream] Invalid JSON chunk:', json); }
 	}
 	yield { type: 'done', finishReason: stopReason, usage };
 }

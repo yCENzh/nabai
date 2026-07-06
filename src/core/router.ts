@@ -114,7 +114,7 @@ export async function resolveProvider(sql: DurableObjectStorage['sql'], endpoint
 
 	const keys: CachedKeyOption[] = rows.map((row) => {
 		let forwardClientKey = false;
-		try { forwardClientKey = JSON.parse(row[4]).forward_client_key === true; } catch {}
+		try { forwardClientKey = JSON.parse(row[4]).forward_client_key === true; } catch { console.warn('Invalid config_json for provider', row[2]); }
 		return {
 			apiKey: row[0] as string,
 			providerType: row[1] as string,

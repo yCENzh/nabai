@@ -353,7 +353,8 @@ async function* streamToCanonical(response: Response, req: CanonicalRequest): As
 
 	for await (const json of streamSSELines(response)) {
 		let parsed: any;
-		try { parsed = JSON.parse(json); } catch { continue; }
+		let parsed: any;
+		try { parsed = JSON.parse(json); } catch { console.warn('[stream] Invalid JSON chunk:', json); continue; }
 
 		if (parsed.usageMetadata) {
 			usage = { input_tokens: parsed.usageMetadata.promptTokenCount, output_tokens: parsed.usageMetadata.candidatesTokenCount };
