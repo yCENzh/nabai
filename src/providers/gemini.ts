@@ -1,4 +1,4 @@
-import { HttpError, BASE_URL, API_VERSION, makeHeaders, streamSSELines } from '../core/utils';
+import { HttpError, BASE_URL, API_VERSION, makeHeaders, streamSSELines, STREAM_TIMEOUT_MS } from '../core/utils';
 import type { CanonicalRequest, CanonicalResponse, CanonicalStreamEvent, ContentBlock, CanonicalMessage } from '../core/types';
 import type { Provider, ProviderContext } from './base';
 
@@ -351,8 +351,7 @@ async function* streamToCanonical(response: Response, req: CanonicalRequest): As
 	let lastReasoning: Record<number, string> = {};
 	let usage: { input_tokens?: number; output_tokens?: number } | undefined;
 
-	for await (const json of streamSSELines(response)) {
-		let parsed: any;
+	for await (const json of streamSSELines(response, { timeoutMs: STREAM_TIMEOUT_MS })) {
 		let parsed: any;
 		try { parsed = JSON.parse(json); } catch { console.warn('[stream] Invalid JSON chunk:', json); continue; }
 
