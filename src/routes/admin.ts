@@ -43,7 +43,7 @@ export async function handleDeleteProvider(request: Request, sql: DurableObjectS
 			AND (SELECT COUNT(*) FROM key_providers kp2 WHERE kp2.api_key = kp.api_key) = 1
 		`, id).raw<any>()).map((r: any) => r[0]);
 
-		sql.exec('BEGIN');
+		sql.exec('BEGIN TRANSACTION');
 
 		if (soleKeys.length > 0) {
 			const placeholders = soleKeys.map(() => '?').join(',');
@@ -110,6 +110,9 @@ export async function handleUpdateApiKey(request: Request, sql: DurableObjectSto
 		};
 		if (!api_key) return jsonResponse({ error: 'api_key 是必填项' }, 400);
 		if (!Array.isArray(provider_ids) || provider_ids.length === 0) return jsonResponse({ error: '至少选择一个 Provider' }, 400);
+
+		sql.exec('BEGIN TRANSACTION');
+
 		sql.exec(
 			'UPDATE api_keys SET health_check_enabled = ? WHERE api_key = ?',
 			health_check_enabled !== false ? 1 : 0, api_key
@@ -118,8 +121,12 @@ export async function handleUpdateApiKey(request: Request, sql: DurableObjectSto
 		for (const pid of provider_ids) {
 			sql.exec('INSERT OR IGNORE INTO key_providers (id, api_key, provider_id) VALUES (?, ?, ?)', crypto.randomUUID(), api_key, pid);
 		}
+
+		sql.exec('COMMIT');
+
 		return jsonResponse({ message: '密钥更新成功。' });
 	} catch (error: any) {
+		try { sql.exec('ROLLBACK'); } catch {}
 		console.error('更新密钥失败:', error);
 		return jsonResponse({ error: error.message || '内部服务器错误' }, 500);
 	}
@@ -132,6 +139,8 @@ export async function handleDeleteApiKeys(request: Request, sql: DurableObjectSt
 			return jsonResponse({ error: '请求体无效，需要一个包含key的非空数组。' }, 400);
 		}
 
+		sql.exec('BEGIN TRANSACTION');
+
 		const batchSize = 500;
 		for (let i = 0; i < keys.length; i += batchSize) {
 			const batch = keys.slice(i, i + batchSize);
@@ -141,8 +150,11 @@ export async function handleDeleteApiKeys(request: Request, sql: DurableObjectSt
 			sql.exec(`DELETE FROM api_keys WHERE api_key IN (${placeholders})`, ...batch);
 		}
 
+		sql.exec('COMMIT');
+
 		return jsonResponse({ message: 'API密钥删除成功。' });
 	} catch (error: any) {
+		try { sql.exec('ROLLBACK'); } catch {}
 		console.error('删除API密钥失败:', error);
 		return jsonResponse({ error: error.message || '内部服务器错误' }, 500);
 	}
@@ -231,7 +243,7 @@ export async function handleUpsertModel(request: Request, sql: DurableObjectStor
 		if (!model) return jsonResponse({ error: 'model 是必填项' }, 400);
 		if (!Array.isArray(keys) || keys.length === 0) return jsonResponse({ error: '至少选择一个密钥' }, 400);
 
-		sql.exec('BEGIN');
+		sql.exec('BEGIN TRANSACTION');
 
 		sql.exec('DELETE FROM key_models WHERE model = ?', model);
 		for (const apiKey of keys) {
@@ -283,7 +295,7 @@ export async function handleUpsertEndpoint(request: Request, sql: DurableObjectS
 			return jsonResponse({ error: 'id, path 是必填项' }, 400);
 		}
 
-		sql.exec('BEGIN');
+		sql.exec('BEGIN TRANSACTION');
 
 		sql.exec(
 			`INSERT INTO endpoints (id, path, enabled, updated_at)
@@ -361,7 +373,7 @@ export async function handleRestore(request: Request, sql: DurableObjectStorage[
 			return jsonResponse({ error: '格式无效：需要 providers, keys, endpoints 数组' }, 400);
 		}
 
-		sql.exec('BEGIN');
+		sql.exec('BEGIN TRANSACTION');
 
 		sql.exec('DELETE FROM endpoint_models');
 		sql.exec('DELETE FROM key_models');
