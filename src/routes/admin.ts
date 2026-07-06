@@ -341,8 +341,8 @@ export async function handleBackup(sql: DurableObjectStorage['sql']): Promise<Re
 		).map((r: any) => ({ id: r[0], type: r[1], name: r[2], base_url: r[3], enabled: r[4] === 1, config_json: r[5] }));
 
 		const keys = Array.from(
-			sql.exec('SELECT api_key, enabled, health_check_enabled FROM api_keys ORDER BY created_at').raw<any>()
-		).map((r: any) => ({ api_key: r[0], enabled: r[1] === 1, health_check_enabled: r[2] === 1 }));
+			sql.exec('SELECT api_key, enabled, health_check_enabled, key_group FROM api_keys ORDER BY created_at').raw<any>()
+		).map((r: any) => ({ api_key: r[0], enabled: r[1] === 1, health_check_enabled: r[2] === 1, key_group: r[3] }));
 
 		const keyProviders = Array.from(
 			sql.exec('SELECT api_key, provider_id FROM key_providers ORDER BY created_at').raw<any>()
@@ -360,7 +360,7 @@ export async function handleBackup(sql: DurableObjectStorage['sql']): Promise<Re
 			sql.exec('SELECT id, path, enabled FROM endpoints ORDER BY created_at').raw<any>()
 		).map((r: any) => ({ id: r[0], path: r[1], enabled: r[2] === 1 }));
 
-		return jsonResponse({ version: 3, providers, keys, keyProviders, keyModels, endpointModels, endpoints, exported_at: new Date().toISOString() });
+		return jsonResponse({ providers, keys, keyProviders, keyModels, endpointModels, endpoints, exported_at: new Date().toISOString() });
 	} catch (error: any) {
 		return jsonResponse({ error: error.message }, 500);
 	}
@@ -394,8 +394,8 @@ export async function handleRestore(request: Request, sql: DurableObjectStorage[
 			if (!k.api_key) continue;
 			const keyId = crypto.randomUUID();
 			sql.exec(
-				'INSERT INTO api_keys (id, api_key, enabled, health_check_enabled) VALUES (?, ?, ?, ?)',
-				keyId, k.api_key, k.enabled !== false ? 1 : 0, k.health_check_enabled !== false ? 1 : 0
+				'INSERT INTO api_keys (id, api_key, enabled, health_check_enabled, key_group) VALUES (?, ?, ?, ?, ?)',
+				keyId, k.api_key, k.enabled !== false ? 1 : 0, k.health_check_enabled !== false ? 1 : 0, k.key_group
 			);
 		}
 
@@ -413,13 +413,6 @@ export async function handleRestore(request: Request, sql: DurableObjectStorage[
 			}
 		}
 
-		if (Array.isArray(data.endpointModels)) {
-			for (const em of data.endpointModels) {
-				if (!em.endpoint_id || !em.model) continue;
-				sql.exec('INSERT INTO endpoint_models (id, endpoint_id, model) VALUES (?, ?, ?)', crypto.randomUUID(), em.endpoint_id, em.model);
-			}
-		}
-
 		for (const ep of data.endpoints) {
 			if (!ep.id || !ep.path) continue;
 			sql.exec(
@@ -428,9 +421,22 @@ export async function handleRestore(request: Request, sql: DurableObjectStorage[
 			);
 		}
 
+		if (Array.isArray(data.endpointModels)) {
+			for (const em of data.endpointModels) {
+				if (!em.endpoint_id || !em.model) continue;
+				sql.exec('INSERT INTO endpoint_models (id, endpoint_id, model) VALUES (?, ?, ?)', crypto.randomUUID(), em.endpoint_id, em.model);
+			}
+		}
+
 		sql.exec('COMMIT');
 
-		return jsonResponse({ message: '恢复成功。', providers: data.providers.length, keys: data.keys.length, endpoints: data.endpoints.length });
+		return jsonResponse({
+			message: '恢复成功。',
+			providers: data.providers.length,
+			keys: data.keys.length,
+			models: (data.keyModels || []).length,
+			endpoints: data.endpoints.length,
+		});
 	} catch (error: any) {
 		try { sql.exec('ROLLBACK'); } catch {}
 		return jsonResponse({ error: error.message }, 500);
