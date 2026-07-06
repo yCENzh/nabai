@@ -160,9 +160,14 @@ export class AnthropicProvider implements Provider {
 		};
 		if (ctx.requestHeaders) {
 			for (const [key, value] of ctx.requestHeaders.entries()) {
-				if (!['content-type', 'x-api-key', 'authorization'].includes(key.toLowerCase())) {
-					headers[key] = value;
+				const lower = key.toLowerCase();
+				if (['content-type', 'x-api-key', 'authorization'].includes(lower)) continue;
+				if (lower === 'cookie') {
+					const cleaned = value.replace(/(?:^|;\s*)auth-key=[^;]*;?\s*/g, '').trim();
+					if (cleaned) headers[key] = cleaned;
+					continue;
 				}
+				headers[key] = value;
 			}
 		}
 

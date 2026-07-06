@@ -335,9 +335,14 @@ export class GeminiProvider implements Provider {
 		const baseHeaders: Record<string, string> = makeHeaders(ctx.apiKey, { 'Content-Type': 'application/json' }) as Record<string, string>;
 		if (ctx.requestHeaders) {
 			for (const [key, value] of ctx.requestHeaders.entries()) {
-				if (!['content-type', 'x-goog-api-key'].includes(key.toLowerCase())) {
-					baseHeaders[key] = value;
+				const lower = key.toLowerCase();
+				if (['content-type', 'x-goog-api-key'].includes(lower)) continue;
+				if (lower === 'cookie') {
+					const cleaned = value.replace(/(?:^|;\s*)auth-key=[^;]*;?\s*/g, '').trim();
+					if (cleaned) baseHeaders[key] = cleaned;
+					continue;
 				}
+				baseHeaders[key] = value;
 			}
 		}
 
