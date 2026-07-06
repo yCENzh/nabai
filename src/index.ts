@@ -34,6 +34,48 @@ async function resolveConfig(stub: DurableObjectStub, endpointId: string, model?
 	return { data, status: resp.status };
 }
 
+type ResolvedConfig = {
+	providerType: string; providerName: string; baseUrl: string;
+	forwardClientKey: boolean; apiKey?: string;
+};
+
+/**
+ * 解析 endpoint 配置 + 认证校验。
+ * 成功返回 API key 与 provider 信息，失败返回错误 Response。
+ */
+async function resolveConfigAndAuth(
+	stub: DurableObjectStub, endpointId: string, model: string | undefined,
+	env: { AUTH_KEY: string }, clientKey: string | null
+): Promise<Response | ResolvedConfig & { apiKey: string }> {
+	const { data: cfg, status: resolveStatus } = await resolveConfig(stub, endpointId, model);
+	if (cfg.error) {
+		return new Response(JSON.stringify({ error: cfg.error }), {
+			status: resolveStatus,
+			headers: { 'Content-Type': 'application/json', ...fixCors({}).headers },
+		});
+	}
+
+	if (!cfg.forwardClientKey && env.AUTH_KEY) {
+		if (clientKey !== env.AUTH_KEY) {
+			return new Response('Unauthorized', { status: 401, headers: fixCors({}).headers });
+		}
+		if (!cfg.apiKey) {
+			return new Response(JSON.stringify({ error: 'No API keys configured for this endpoint.' }), {
+				status: 500,
+				headers: { 'Content-Type': 'application/json', ...fixCors({}).headers },
+			});
+		}
+		return { providerType: cfg.providerType, providerName: cfg.providerName, baseUrl: cfg.baseUrl, forwardClientKey: cfg.forwardClientKey, apiKey: cfg.apiKey };
+	}
+	if (!clientKey) {
+		return new Response(JSON.stringify({ error: 'No API key found in the client headers.' }), {
+			status: 400,
+			headers: { 'Content-Type': 'application/json', ...fixCors({}).headers },
+		});
+	}
+	return { providerType: cfg.providerType, providerName: cfg.providerName, baseUrl: cfg.baseUrl, forwardClientKey: cfg.forwardClientKey, apiKey: clientKey };
+}
+
 
 app.get('/', (c) => {
 	const sessionKey = getCookie(c, 'auth-key');
@@ -176,34 +218,15 @@ app.all('*', async (c) => {
 			model = body?.model;
 		} catch {}
 
-		const { data: cfg, status: resolveStatus } = await resolveConfig(stub, endpointId, model);
-		if (cfg.error) {
-			return new Response(JSON.stringify({ error: cfg.error }), {
-				status: resolveStatus,
-				headers: { 'Content-Type': 'application/json', ...fixCors({}).headers },
-			});
-		}
-
 		const clientKey = request.headers.get('x-api-key') ?? request.headers.get('Authorization')?.replace('Bearer ', '') ?? null;
-		if (!cfg.forwardClientKey && c.env.AUTH_KEY) {
-			if (clientKey !== c.env.AUTH_KEY) {
-				return new Response('Unauthorized', { status: 401, headers: fixCors({}).headers });
-			}
-			if (!cfg.apiKey) {
-				return new Response(JSON.stringify({ error: 'No API keys configured for this endpoint.' }), {
-					status: 500,
-					headers: { 'Content-Type': 'application/json', ...fixCors({}).headers },
-				});
-			}
-			return handleAnthropicMessages(request, { apiKey: cfg.apiKey, provider: buildProvider(cfg.providerType, cfg.baseUrl), providerName: cfg.providerName });
-		}
-		if (!clientKey) {
-			return new Response(JSON.stringify({ error: 'No API key found in the client headers.' }), {
-				status: 400,
-				headers: { 'Content-Type': 'application/json', ...fixCors({}).headers },
-			});
-		}
-		return handleAnthropicMessages(request, { apiKey: clientKey, provider: buildProvider(cfg.providerType, cfg.baseUrl), providerName: cfg.providerName });
+		const result = await resolveConfigAndAuth(stub, endpointId, model, c.env, clientKey);
+		if (result instanceof Response) return result;
+
+		return handleAnthropicMessages(request, {
+			apiKey: result.apiKey,
+			provider: buildProvider(result.providerType, result.baseUrl),
+			providerName: result.providerName,
+		});
 	}
 
 	// GET /v1/models — list all configured models
@@ -232,34 +255,17 @@ app.all('*', async (c) => {
 			model = body?.model;
 		} catch {}
 
-		const { data: cfg, status: resolveStatus } = await resolveConfig(stub, endpointId, model);
-		if (cfg.error) {
-			return new Response(JSON.stringify({ error: cfg.error }), {
-				status: resolveStatus,
-				headers: { 'Content-Type': 'application/json', ...fixCors({}).headers },
-			});
-		}
-
 		const clientKey = request.headers.get('Authorization')?.replace('Bearer ', '') ?? null;
-		if (!cfg.forwardClientKey && c.env.AUTH_KEY) {
-			if (clientKey !== c.env.AUTH_KEY) {
-				return new Response('Unauthorized', { status: 401, headers: fixCors({}).headers });
-			}
-			if (!cfg.apiKey) {
-				return new Response(JSON.stringify({ error: 'No API keys configured for this endpoint.' }), {
-					status: 500,
-					headers: { 'Content-Type': 'application/json', ...fixCors({}).headers },
-				});
-			}
-			return handleOpenAI(request, { apiKey: cfg.apiKey, provider: buildProvider(cfg.providerType, cfg.baseUrl), providerName: cfg.providerName, baseUrl: cfg.baseUrl, providerType: cfg.providerType });
-		}
-		if (!clientKey) {
-			return new Response(JSON.stringify({ error: 'No API key found in the client headers.' }), {
-				status: 400,
-				headers: { 'Content-Type': 'application/json', ...fixCors({}).headers },
-			});
-		}
-		return handleOpenAI(request, { apiKey: clientKey, provider: buildProvider(cfg.providerType, cfg.baseUrl), providerName: cfg.providerName, baseUrl: cfg.baseUrl, providerType: cfg.providerType });
+		const result = await resolveConfigAndAuth(stub, endpointId, model, c.env, clientKey);
+		if (result instanceof Response) return result;
+
+		return handleOpenAI(request, {
+			apiKey: result.apiKey,
+			provider: buildProvider(result.providerType, result.baseUrl),
+			providerName: result.providerName,
+			baseUrl: result.baseUrl,
+			providerType: result.providerType,
+		});
 	}
 
 	return new Response(JSON.stringify({ error: 'Not found' }), { status: 404, headers: { 'Content-Type': 'application/json', ...fixCors({}).headers } });
