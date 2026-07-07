@@ -39,7 +39,6 @@ export function stripEndpointPrefix(pathname: string): string {
 
 export interface EndpointConfig {
 	id: string;
-	path: string;
 	enabled: boolean;
 }
 
@@ -72,8 +71,8 @@ export async function resolveProvider(sql: DurableObjectStorage['sql'], endpoint
 	resolveCache.delete(cacheKey);
 
 	const epRows = Array.from(sql.exec(
-		'SELECT id, path, enabled FROM endpoints WHERE id = ?', endpointId
-	).raw<[string, string, number]>());
+		'SELECT id, enabled FROM endpoints WHERE id = ?', endpointId
+	).raw<[string, number]>());
 	if (epRows.length === 0) {
 		throw new HttpError(
 			endpointId === 'default'
@@ -83,8 +82,8 @@ export async function resolveProvider(sql: DurableObjectStorage['sql'], endpoint
 		);
 	}
 	const ep = epRows[0];
-	if (ep[2] !== 1) throw new HttpError(`Endpoint "${endpointId}" is disabled.`, 404);
-	const endpoint: EndpointConfig = { id: ep[0], path: ep[1], enabled: true };
+	if (ep[1] !== 1) throw new HttpError(`Endpoint "${endpointId}" is disabled.`, 404);
+	const endpoint: EndpointConfig = { id: ep[0], enabled: true };
 
 	if (!model) throw new HttpError('Model is required. Provide a model in the request body.', 400);
 

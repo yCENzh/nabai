@@ -49,13 +49,12 @@ export class ConfigManager {
 
 			CREATE TABLE IF NOT EXISTS endpoints (
 				id TEXT PRIMARY KEY,
-				path TEXT NOT NULL,
 				enabled INTEGER NOT NULL DEFAULT 1,
 				created_at INTEGER NOT NULL DEFAULT (unixepoch()),
 				updated_at INTEGER NOT NULL DEFAULT (unixepoch())
 			);
 		`);
 
-		this.sql.exec("INSERT OR IGNORE INTO endpoints (id, path, enabled) VALUES ('default', '/v1', 1)");
+		this.sql.exec("INSERT OR IGNORE INTO endpoints (id, enabled) VALUES ('default', 1)");
 	}
 }

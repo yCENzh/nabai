@@ -354,15 +354,10 @@ export const Render = ({ isAuthenticated, showWarning }: { isAuthenticated: bool
 								<div class="form-row">
 									<div class="form-field">
 										<label>ID</label>
-										<input type="text" id="ef-id" placeholder="main" required />
-									</div>
-									<div class="form-field">
-										<label>访问路径</label>
-										<div class="text-muted" style="font-size:12px;margin-top:2px;">
-											<span id="ef-path-display"></span>
-											<span id="ef-path-hint">https://YOUR-DOMAIN/e/{'{id}'}</span>
-										</div>
-									</div>
+										<input type="text" id="ef-id" placeholder="main" required />									<div class="text-muted" style="font-size:12px;margin-top:2px;">
+										访问路径：<span id="ef-path-display"></span>
+									</div>									</div>
+
 								</div>
 								<div class="form-field" style="margin-bottom:12px;">
 									<label>绑定 Model（必选，可多选）</label>
@@ -385,7 +380,7 @@ export const Render = ({ isAuthenticated, showWarning }: { isAuthenticated: bool
 									<thead>
 										<tr>
 											<th>ID</th>
-											<th>路径</th>
+											<th>访问路径</th>
 											<th>绑定 Model</th>
 											<th>状态</th>
 											<th>操作</th>

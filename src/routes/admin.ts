@@ -15,7 +15,7 @@ type ProviderRow = [string, string, string, string, number, string];
 /** SQL 行类型：api_keys 表（SELECT：api_key, enabled, health_check_enabled, key_group） */
 type ApiKeyRow = [string, number, number, string];
 /** SQL 行类型：endpoints 表（SELECT 常用列） */
-type EndpointRow = [string, string, number];
+type EndpointRow = [string, number];
 /** SQL 行类型：key_providers / key_models / endpoint_models 关联表 */
 type KeyRefRow = [string, string];
 /** SQL 行类型：聚合查询（GROUP_CONCAT） */
@@ -46,12 +46,12 @@ interface UpsertModelBody {
 	model?: string; keys?: string[];
 }
 interface UpsertEndpointBody {
-	id?: string; path?: string; models?: string[]; enabled?: boolean;
+	id?: string; models?: string[]; enabled?: boolean;
 }
 interface BackupData {
 	providers: Array<{ id: string; type: string; name: string; base_url: string; enabled: boolean; config_json: string }>;
 	keys: Array<{ api_key: string; enabled: boolean; health_check_enabled: boolean; key_group: string }>;
-	endpoints: Array<{ id: string; path: string; enabled: boolean }>;
+	endpoints: Array<{ id: string; enabled: boolean }>;
 	keyProviders?: Array<{ api_key: string; provider_id: string }>;
 	keyModels?: Array<{ model: string; api_key: string }>;
 	endpointModels?: Array<{ endpoint_id: string; model: string }>;
@@ -336,8 +336,8 @@ export async function handleDeleteModel(request: Request, sql: DurableObjectStor
 
 export async function handleGetEndpoints(sql: DurableObjectStorage['sql']): Promise<Response> {
 	try {
-		const endpoints: Array<{ id: string; path: string; enabled: boolean; models: string[] }> = Array.from(sql.exec('SELECT id, path, enabled FROM endpoints ORDER BY created_at').raw<EndpointRow>())
-			.map((row) => ({ id: row[0], path: row[1], enabled: row[2] === 1, models: [] }));
+		const endpoints: Array<{ id: string; enabled: boolean; models: string[] }> = Array.from(sql.exec('SELECT id, enabled FROM endpoints ORDER BY created_at').raw<EndpointRow>())
+			.map((row) => ({ id: row[0], enabled: row[1] === 1, models: [] }));
 		for (const ep of endpoints) {
 			const models = Array.from(sql.exec('SELECT model FROM endpoint_models WHERE endpoint_id = ?', ep.id).raw<[string]>())
 				.map((r: [string]) => r[0]);
@@ -351,9 +351,9 @@ export async function handleGetEndpoints(sql: DurableObjectStorage['sql']): Prom
 
 export async function handleUpsertEndpoint(request: Request, storage: DurableObjectStorage): Promise<Response> {
 	try {
-		const { id, path, models, enabled } = await request.json() as UpsertEndpointBody;
-		if (!id || !path) {
-			return jsonResponse({ error: 'id, path 是必填项' }, 400);
+		const { id, models, enabled } = await request.json() as UpsertEndpointBody;
+		if (!id) {
+			return jsonResponse({ error: 'id 是必填项' }, 400);
 		}
 		if (!validateId(id)) {
 			return jsonResponse({ error: 'ID 只能包含英文字母、数字、下划线和连字符' }, 400);
@@ -361,10 +361,10 @@ export async function handleUpsertEndpoint(request: Request, storage: DurableObj
 
 		storage.transactionSync(() => {
 			storage.sql.exec(
-				`INSERT INTO endpoints (id, path, enabled, updated_at)
-				 VALUES (?, ?, ?, unixepoch())
-				 ON CONFLICT(id) DO UPDATE SET path=excluded.path, enabled=excluded.enabled, updated_at=unixepoch()`,
-				id, path, enabled !== false ? 1 : 0
+				`INSERT INTO endpoints (id, enabled, updated_at)
+				 VALUES (?, ?, unixepoch())
+				 ON CONFLICT(id) DO UPDATE SET enabled=excluded.enabled, updated_at=unixepoch()`,
+				id, enabled !== false ? 1 : 0
 			);
 			storage.sql.exec('DELETE FROM endpoint_models WHERE endpoint_id = ?', id);
 			if (Array.isArray(models)) {
@@ -418,8 +418,8 @@ export async function handleBackup(sql: DurableObjectStorage['sql']): Promise<Re
 		).map((r: KeyRefRow) => ({ endpoint_id: r[0], model: r[1] }));
 
 		const endpoints = Array.from(
-			sql.exec('SELECT id, path, enabled FROM endpoints ORDER BY created_at').raw<EndpointRow>()
-		).map((r: EndpointRow) => ({ id: r[0], path: r[1], enabled: r[2] === 1 }));
+			sql.exec('SELECT id, enabled FROM endpoints ORDER BY created_at').raw<EndpointRow>()
+		).map((r: EndpointRow) => ({ id: r[0], enabled: r[1] === 1 }));
 
 		return jsonResponse({ providers, keys, keyProviders, keyModels, endpointModels, endpoints, exported_at: new Date().toISOString() });
 	} catch (error: any) {
@@ -448,7 +448,7 @@ export async function handleRestore(request: Request, storage: DurableObjectStor
 		if (data.keys.some(k => !k.api_key)) {
 			return jsonResponse({ error: 'keys 中包含不完整的条目' }, 400);
 		}
-		if (data.endpoints.some(ep => !ep.id || !ep.path)) {
+		if (data.endpoints.some(ep => !ep.id)) {
 			return jsonResponse({ error: 'endpoints 中包含不完整的条目' }, 400);
 		}
 
@@ -492,10 +492,10 @@ export async function handleRestore(request: Request, storage: DurableObjectStor
 			}
 
 			for (const ep of data.endpoints) {
-				if (!ep.id || !ep.path) continue;
+				if (!ep.id) continue;
 				storage.sql.exec(
-					'INSERT INTO endpoints (id, path, enabled) VALUES (?, ?, ?)',
-					ep.id, ep.path, ep.enabled !== false ? 1 : 0
+					'INSERT INTO endpoints (id, enabled) VALUES (?, ?)',
+					ep.id, ep.enabled !== false ? 1 : 0
 				);
 			}
 

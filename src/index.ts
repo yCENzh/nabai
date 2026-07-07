@@ -18,7 +18,7 @@ function getDOStub(c: { env: Env }): DurableObjectStub {
 
 async function resolveConfig(stub: DurableObjectStub, endpointId: string, model?: string): Promise<{ data: {
 	providerType: string; providerName: string; baseUrl: string;
-	endpoint: { id: string; path: string; enabled: boolean } | null;
+	endpoint: { id: string; enabled: boolean } | null;
 	apiKey?: string; error?: string;
 }; status: number }> {
 	const resp = await stub.fetch(new Request('http://do/__resolve', {
@@ -28,7 +28,7 @@ async function resolveConfig(stub: DurableObjectStub, endpointId: string, model?
 	}));
 	const data = await resp.json() as {
 		providerType: string; providerName: string; baseUrl: string;
-		endpoint: { id: string; path: string; enabled: boolean } | null;
+		endpoint: { id: string; enabled: boolean } | null;
 		apiKey?: string; error?: string;
 	};
 	return { data, status: resp.status };
