@@ -126,14 +126,13 @@ function confirmModal(title, body, buttons) {
 
 	providerForm.addEventListener('submit', async (e) => {
 		e.preventDefault();
-		const config = { forward_client_key: document.getElementById('pf-forward').checked };
 		const data = {
 			id: document.getElementById('pf-id').value.trim(),
 			type: document.getElementById('pf-type').value,
 			name: document.getElementById('pf-name').value.trim(),
 			base_url: document.getElementById('pf-base-url').value.trim(),
 			enabled: document.getElementById('pf-enabled').checked,
-			config_json: JSON.stringify(config),
+			config_json: '{}',
 		};
 		if (!data.id || !data.name || !data.base_url) { toast('请填写所有必填项', true); return; }
 		try {
@@ -200,7 +199,6 @@ function confirmModal(title, body, buttons) {
 			document.getElementById('pf-enabled').checked = btn.dataset.enabled === '1';
 			document.getElementById('provider-submit-btn').textContent = '更新';
 			document.getElementById('cancel-provider-btn').classList.remove('hidden');
-			try { const cfg = JSON.parse(btn.dataset.config || '{}'); document.getElementById('pf-forward').checked = cfg.forward_client_key === true; } catch { document.getElementById('pf-forward').checked = false; }
 		}
 	});
 

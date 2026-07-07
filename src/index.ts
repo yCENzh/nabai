@@ -18,7 +18,7 @@ function getDOStub(c: { env: Env }): DurableObjectStub {
 
 async function resolveConfig(stub: DurableObjectStub, endpointId: string, model?: string): Promise<{ data: {
 	providerType: string; providerName: string; baseUrl: string;
-	forwardClientKey: boolean; endpoint: { id: string; path: string; enabled: boolean } | null;
+	endpoint: { id: string; path: string; enabled: boolean } | null;
 	apiKey?: string; error?: string;
 }; status: number }> {
 	const resp = await stub.fetch(new Request('http://do/__resolve', {
@@ -28,16 +28,11 @@ async function resolveConfig(stub: DurableObjectStub, endpointId: string, model?
 	}));
 	const data = await resp.json() as {
 		providerType: string; providerName: string; baseUrl: string;
-		forwardClientKey: boolean; endpoint: { id: string; path: string; enabled: boolean } | null;
+		endpoint: { id: string; path: string; enabled: boolean } | null;
 		apiKey?: string; error?: string;
 	};
 	return { data, status: resp.status };
 }
-
-type ResolvedConfig = {
-	providerType: string; providerName: string; baseUrl: string;
-	forwardClientKey: boolean; apiKey?: string;
-};
 
 /**
  * 解析 endpoint 配置 + 认证校验。
@@ -46,7 +41,7 @@ type ResolvedConfig = {
 async function resolveConfigAndAuth(
 	stub: DurableObjectStub, endpointId: string, model: string | undefined,
 	env: { AUTH_KEY: string }, clientKey: string | null
-): Promise<Response | ResolvedConfig & { apiKey: string }> {
+): Promise<Response | { providerType: string; providerName: string; baseUrl: string; apiKey: string }> {
 	const { data: cfg, status: resolveStatus } = await resolveConfig(stub, endpointId, model);
 	if (cfg.error) {
 		return new Response(JSON.stringify({ error: cfg.error }), {
@@ -55,25 +50,16 @@ async function resolveConfigAndAuth(
 		});
 	}
 
-	if (!cfg.forwardClientKey && env.AUTH_KEY) {
-		if (clientKey !== env.AUTH_KEY) {
-			return new Response('Unauthorized', { status: 401, headers: fixCors({}).headers });
-		}
-		if (!cfg.apiKey) {
-			return new Response(JSON.stringify({ error: 'No API keys configured for this endpoint.' }), {
-				status: 500,
-				headers: { 'Content-Type': 'application/json', ...fixCors({}).headers },
-			});
-		}
-		return { providerType: cfg.providerType, providerName: cfg.providerName, baseUrl: cfg.baseUrl, forwardClientKey: cfg.forwardClientKey, apiKey: cfg.apiKey };
+	if (clientKey !== env.AUTH_KEY) {
+		return new Response('Unauthorized', { status: 401, headers: fixCors({}).headers });
 	}
-	if (!clientKey) {
-		return new Response(JSON.stringify({ error: 'No API key found in the client headers.' }), {
-			status: 400,
+	if (!cfg.apiKey) {
+		return new Response(JSON.stringify({ error: 'No API keys configured for this endpoint.' }), {
+			status: 500,
 			headers: { 'Content-Type': 'application/json', ...fixCors({}).headers },
 		});
 	}
-	return { providerType: cfg.providerType, providerName: cfg.providerName, baseUrl: cfg.baseUrl, forwardClientKey: cfg.forwardClientKey, apiKey: clientKey };
+	return { providerType: cfg.providerType, providerName: cfg.providerName, baseUrl: cfg.baseUrl, apiKey: cfg.apiKey };
 }
 
 

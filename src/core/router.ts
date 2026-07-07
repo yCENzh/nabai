@@ -9,7 +9,6 @@ interface CachedKeyOption {
 	providerType: string;
 	providerName: string;
 	baseUrl: string;
-	forwardClientKey: boolean;
 }
 interface CachedResolve {
 	endpoint: EndpointConfig;
@@ -48,7 +47,6 @@ export interface ResolvedProvider {
 	provider: Provider;
 	providerName: string;
 	baseUrl: string;
-	forwardClientKey: boolean;
 	endpoint: EndpointConfig | null;
 	apiKey?: string;
 }
@@ -66,7 +64,6 @@ export async function resolveProvider(sql: DurableObjectStorage['sql'], endpoint
 			provider: buildProvider(pick.providerType, pick.baseUrl),
 			providerName: pick.providerName,
 			baseUrl: pick.baseUrl,
-			forwardClientKey: pick.forwardClientKey,
 			endpoint: cached.endpoint,
 			apiKey: pick.apiKey,
 		};
@@ -112,17 +109,12 @@ export async function resolveProvider(sql: DurableObjectStorage['sql'], endpoint
 		throw new HttpError(`No available key for model "${model}" on endpoint "${endpointId}".`, 503);
 	}
 
-	const keys: CachedKeyOption[] = rows.map((row) => {
-		let forwardClientKey = false;
-		try { forwardClientKey = JSON.parse(row[4]).forward_client_key === true; } catch { console.warn('Invalid config_json for provider', row[2]); }
-		return {
-			apiKey: row[0] as string,
-			providerType: row[1] as string,
-			providerName: row[2] as string,
-			baseUrl: row[3] as string,
-			forwardClientKey,
-		};
-	});
+	const keys: CachedKeyOption[] = rows.map((row) => ({
+		apiKey: row[0] as string,
+		providerType: row[1] as string,
+		providerName: row[2] as string,
+		baseUrl: row[3] as string,
+	}));
 
 	// 写入缓存（限制最大条目数，防止内存泄漏）
 	if (resolveCache.size >= CACHE_MAX) {
@@ -139,7 +131,6 @@ export async function resolveProvider(sql: DurableObjectStorage['sql'], endpoint
 		provider: buildProvider(pick.providerType, pick.baseUrl),
 		providerName: pick.providerName,
 		baseUrl: pick.baseUrl,
-		forwardClientKey: pick.forwardClientKey,
 		endpoint,
 		apiKey: pick.apiKey,
 	};

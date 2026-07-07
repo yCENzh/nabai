@@ -215,7 +215,6 @@ export const Render = ({ isAuthenticated, showWarning }: { isAuthenticated: bool
 								</div>
 								<div class="form-actions">
 									<label class="checkbox-label"><input type="checkbox" id="pf-enabled" checked /> 启用</label>
-									<label class="checkbox-label"><input type="checkbox" id="pf-forward" /> 透传客户端密钥</label>
 									<button type="submit" class="btn btn-primary" id="provider-submit-btn">保存</button>
 									<button type="button" class="btn hidden" id="cancel-provider-btn">取消</button>
 								</div>

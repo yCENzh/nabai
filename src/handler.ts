@@ -88,7 +88,6 @@ export class LoadBalancer extends DurableObject {
 					providerType: rp.provider.type,
 					providerName: rp.providerName,
 					baseUrl: rp.baseUrl,
-					forwardClientKey: rp.forwardClientKey,
 					endpoint: rp.endpoint,
 					apiKey: rp.apiKey,
 				}), { headers: { 'Content-Type': 'application/json' } });
