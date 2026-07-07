@@ -114,7 +114,7 @@ https://<your-worker>.workers.dev/e/<endpointId>/v1/chat/completions
 
 - **Provider**：`providers/gemini.ts`、`providers/openai-compat.ts`、`providers/anthropic.ts`
 - **协议适配器**：`protocols/openai.ts`、`protocols/anthropic.ts`
-- **密钥池**：`pool/key-pool.ts`（随机选取 + 429 降级 + 定时健康检查）
+- **密钥池**：`pool/key-pool.ts`（随机选取 + 健康检查自动恢复）
 
 ## 开发
 

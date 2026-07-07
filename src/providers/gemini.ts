@@ -41,7 +41,8 @@ export function transformConfig(req: any) {
 	if (req.response_format) {
 		switch (req.response_format.type) {
 			case 'json_schema':
-				cfg.responseSchema = req.response_format.json_schema?.schema;
+				cfg.responseSchema = JSON.parse(JSON.stringify(req.response_format.json_schema?.schema ?? null));
+				if (cfg.responseSchema) adjustSchema({ object: cfg.responseSchema });
 				if (cfg.responseSchema && 'enum' in cfg.responseSchema) {
 					cfg.responseMimeType = 'text/x.enum';
 					break;
@@ -57,7 +58,7 @@ export function transformConfig(req: any) {
 				throw new HttpError('Unsupported response_format.type', 400);
 		}
 	}
-	if (req.reasoning_effort) {
+	if (req.reasoning_effort && req.reasoning_effort in thinkingBudgetMap) {
 		cfg.thinkingConfig = { thinkingBudget: thinkingBudgetMap[req.reasoning_effort] };
 	}
 

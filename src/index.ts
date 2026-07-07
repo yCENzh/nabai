@@ -232,7 +232,7 @@ app.all('*', async (c) => {
 	}
 
 	// OpenAI routes (chat completions, embeddings → need model binding)
-	if (pathname.endsWith('/chat/completions') || pathname.endsWith('/completions') ||
+	if (pathname.endsWith('/chat/completions') ||
 		pathname.endsWith('/embeddings')) {
 		let model: string | undefined;
 		try {
