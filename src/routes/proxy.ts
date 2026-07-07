@@ -27,7 +27,7 @@ async function handleEmbeddings(req: EmbeddingsRequest, apiKey: string, baseUrl:
 			body: JSON.stringify({
 				requests: inputs.map(text => ({
 					model,
-					content: { parts: { text } },
+					content: { parts: [{ text }] },
 					outputDimensionality: req.dimensions,
 				})),
 			}),
