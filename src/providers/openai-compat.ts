@@ -11,7 +11,7 @@ export class OpenAICompatProvider implements Provider {
 	private baseUrl: string;
 
 	constructor(baseUrl: string = 'https://api.openai.com/v1') {
-		this.baseUrl = baseUrl;
+		this.baseUrl = baseUrl.replace(/\/+$/, '');
 	}
 
 	parseResponse(data: any, req: CanonicalRequest): CanonicalResponse {
@@ -85,7 +85,14 @@ export class OpenAICompatProvider implements Provider {
 		body.messages = messages;
 		body.stream = req.stream ?? false;
 		if (req.tools?.length) body.tools = req.tools;
-		if (req.tool_choice) body.tool_choice = req.tool_choice;
+		if (req.tool_choice) {
+			// Convert canonical { type: 'function', name } back to OpenAI format
+			if (typeof req.tool_choice === 'object' && 'name' in req.tool_choice) {
+				body.tool_choice = { type: 'function', function: { name: req.tool_choice.name } };
+			} else {
+				body.tool_choice = req.tool_choice;
+			}
+		}
 		if (req.temperature != null) body.temperature = req.temperature;
 		if (req.top_p != null) body.top_p = req.top_p;
 		if (req.max_tokens != null) body.max_tokens = req.max_tokens;

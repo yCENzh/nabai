@@ -191,7 +191,7 @@ export function transformTools(req: any) {
 		}
 	}
 	if (req.tool_choice) {
-		const allowed_function_names = req.tool_choice?.type === 'function' ? [req.tool_choice?.function?.name] : undefined;
+		const allowed_function_names = req.tool_choice?.type === 'function' ? [req.tool_choice?.name] : undefined;
 		if (allowed_function_names || typeof req.tool_choice === 'string') {
 			tool_config = {
 				function_calling_config: {
