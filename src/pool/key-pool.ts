@@ -12,7 +12,8 @@ export async function healthCheckKey(
 
 		let resp: Response;
 		if (providerType === 'gemini') {
-			resp = await fetch(`${cleanUrl}/v1beta/models/${model}:generateContent?key=${apiKey}`, {
+			const m = model.startsWith('models/') ? model.substring(7) : model;
+			resp = await fetch(`${cleanUrl}/v1beta/models/${m}:generateContent?key=${apiKey}`, {
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json' },
 				body: JSON.stringify({ contents: [{ parts: [{ text: 'hi' }] }] }),

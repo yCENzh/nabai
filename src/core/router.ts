@@ -141,19 +141,35 @@ export function buildProvider(type: string, baseUrl: string): Provider {
 	return new GeminiProvider(baseUrl);
 }
 
-export function listModels(sql: DurableObjectStorage['sql']): string[] {
+export function listModels(sql: DurableObjectStorage['sql'], endpointId?: string): string[] {
 	if (modelsCache && Date.now() - modelsCache.ts < MODELS_CACHE_TTL) {
 		return modelsCache.data;
 	}
 
-	const rows = Array.from(sql.exec(`
-		SELECT DISTINCT km.model
-		FROM key_models km
-		JOIN api_keys k ON k.api_key = km.api_key AND k.enabled = 1 AND k.key_group = 'normal'
-		JOIN key_providers kp ON kp.api_key = k.api_key
-		JOIN providers p ON p.id = kp.provider_id AND p.enabled = 1
-		ORDER BY km.model
-	`).raw<[string]>());
+	let query: string;
+	let bindings: any[] = [];
+	if (endpointId) {
+		query = `
+			SELECT DISTINCT km.model
+			FROM key_models km
+			JOIN endpoint_models em ON em.model = km.model AND em.endpoint_id = ?
+			JOIN api_keys k ON k.api_key = km.api_key AND k.enabled = 1 AND k.key_group = 'normal'
+			JOIN key_providers kp ON kp.api_key = k.api_key
+			JOIN providers p ON p.id = kp.provider_id AND p.enabled = 1
+			ORDER BY km.model
+		`;
+		bindings = [endpointId];
+	} else {
+		query = `
+			SELECT DISTINCT km.model
+			FROM key_models km
+			JOIN api_keys k ON k.api_key = km.api_key AND k.enabled = 1 AND k.key_group = 'normal'
+			JOIN key_providers kp ON kp.api_key = k.api_key
+			JOIN providers p ON p.id = kp.provider_id AND p.enabled = 1
+			ORDER BY km.model
+		`;
+	}
+	const rows = Array.from(sql.exec(query, ...bindings).raw<[string]>());
 	const models = rows.map((r: [string]) => r[0]);
 	modelsCache = { data: models, ts: Date.now() };
 	return models;

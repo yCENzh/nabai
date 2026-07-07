@@ -53,7 +53,7 @@ export class LoadBalancer extends DurableObject {
 			}
 
 			// Keys
-			if (pathname === '/api/keys' && request.method === 'POST') return handleApiKeys(request, this.ctx.storage.sql);
+			if (pathname === '/api/keys' && request.method === 'POST') return handleApiKeys(request, this.ctx.storage);
 			if (pathname === '/api/keys' && request.method === 'PUT') return handleUpdateApiKey(request, this.ctx.storage);
 			if (pathname === '/api/keys' && request.method === 'GET') return getAllApiKeys(request, this.ctx.storage.sql);
 			if (pathname === '/api/keys' && request.method === 'DELETE') return handleDeleteApiKeys(request, this.ctx.storage);
@@ -102,7 +102,9 @@ export class LoadBalancer extends DurableObject {
 		// Internal: list all models (called from Worker /v1/models)
 		if (pathname === '/__list-models') {
 			try {
-				const models = listModels(this.ctx.storage.sql);
+				const url = new URL(request.url);
+				const endpointId = url.searchParams.get('endpointId') || undefined;
+				const models = listModels(this.ctx.storage.sql, endpointId);
 				return new Response(JSON.stringify({ models }), { headers: { 'Content-Type': 'application/json' } });
 			} catch (err: any) {
 				return new Response(JSON.stringify({ error: err.message }), {

@@ -217,7 +217,10 @@ app.all('*', async (c) => {
 
 	// GET /v1/models — list all configured models
 	if (pathname.endsWith('/models') && request.method === 'GET') {
-		const resp = await stub.fetch(new Request('http://do/__list-models'));
+		const modelsUrl = endpointId && endpointId !== 'default'
+			? `http://do/__list-models?endpointId=${encodeURIComponent(endpointId)}`
+			: 'http://do/__list-models';
+		const resp = await stub.fetch(new Request(modelsUrl));
 		const { models, error } = await resp.json() as { models?: string[]; error?: string };
 		if (error) {
 			return new Response(JSON.stringify({ error }), {

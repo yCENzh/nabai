@@ -82,8 +82,36 @@ export async function transformMessages(messages: CanonicalMessage[]) {
 			system_instruction = { parts: await transformMsg(item) };
 			continue;
 		}
-		if (role !== 'model' && role !== 'user') {
+		if (role !== 'model' && role !== 'user' && role !== 'tool') {
 			throw new HttpError(`Unknown message role: "${item.role}"`, 400);
+		}
+
+		// Tool results (second round of tool calling)
+		if (role === 'tool' || item.role === 'tool') {
+			const parts: any[] = [];
+			if (typeof item.content === 'string') {
+				parts.push({
+					functionResponse: {
+						name: item.name ?? item.tool_call_id ?? '',
+						response: { result: item.content },
+					},
+				});
+			}
+			contents.push({ role: 'user', parts });
+			continue;
+		}
+
+		// Tool calls from assistant
+		if (item.role === 'assistant' && item.tool_calls?.length) {
+			let toolParts = (await transformMsg(item)) || [];
+			for (const tc of item.tool_calls) {
+				const args = typeof tc.function.arguments === 'string'
+					? JSON.parse(tc.function.arguments)
+					: tc.function.arguments ?? {};
+				toolParts.push({ functionCall: { name: tc.function.name, args } });
+			}
+			contents.push({ role: 'model', parts: toolParts });
+			continue;
 		}
 
 		if (system_instruction) {
@@ -124,8 +152,28 @@ export async function transformMsg({ content }: { content: string | ContentBlock
 					},
 				});
 				break;
-			default:
-				throw new HttpError(`Unknown "content" item type: "${item.type}"`, 400);
+			case 'input_json':
+				// Tool call or tool result in content blocks
+				const j = item.json;
+				if (j.id && j.name) {
+					// Assistant tool call — emitted via msg.tool_calls already
+					// but also handle inline input_json blocks
+					parts.push({
+						functionCall: {
+							name: j.name,
+							args: typeof j.arguments === 'string' ? JSON.parse(j.arguments) : j.arguments ?? {},
+						},
+					});
+				} else if (j.tool_call_id) {
+					// Tool result in content block
+					parts.push({
+						functionResponse: {
+							name: j.tool_call_id,
+							response: { result: j.result ?? '' },
+						},
+					});
+				}
+				break;
 		}
 	}
 
@@ -271,14 +319,31 @@ export class GeminiProvider implements Provider {
 			model,
 			choices: (data.candidates ?? []).map((cand: any) => {
 				const { reasoningContent, finalContent } = parseThinkingParts(cand.content?.parts ?? []);
+				// Extract functionCall from non-text, non-thinking parts
+				const toolCalls: any[] = [];
+				for (const part of cand.content?.parts ?? []) {
+					if (part.functionCall) {
+						toolCalls.push({
+							id: 'call_' + crypto.randomUUID().replace(/-/g, '').substring(0, 24),
+							type: 'function',
+							function: {
+								name: part.functionCall.name,
+								arguments: typeof part.functionCall.args === 'string'
+									? part.functionCall.args
+									: JSON.stringify(part.functionCall.args ?? {}),
+							},
+						});
+					}
+				}
 				return {
 					index: cand.index || 0,
 					message: {
 						role: 'assistant' as const,
 						content: finalContent || null,
 						...(reasoningContent ? { reasoning_content: reasoningContent } : {}),
+						...(toolCalls.length > 0 ? { tool_calls: toolCalls } : {}),
 					},
-					finish_reason: GEMINI_REASONS_MAP[cand.finishReason] || cand.finishReason,
+					finish_reason: toolCalls.length > 0 ? 'tool_calls' : (GEMINI_REASONS_MAP[cand.finishReason] || cand.finishReason),
 				};
 			}),
 		};
@@ -342,6 +407,7 @@ export class GeminiProvider implements Provider {
 			method: 'POST',
 			headers: baseHeaders,
 			body: JSON.stringify(body),
+			signal: AbortSignal.timeout(120_000),
 		});
 
 		return { response };
@@ -381,8 +447,16 @@ async function* streamToCanonical(response: Response, req: CanonicalRequest): As
 					if (delta) yield { type: 'text_delta', text: delta };
 				}
 
+				// Emit tool_call_delta for functionCall parts in streaming
+				for (const part of parts) {
+					if (part.functionCall) {
+						yield { type: 'tool_call_delta', id: '', index: cand.index, name: part.functionCall.name, argumentsDelta: JSON.stringify(part.functionCall.args ?? {}) };
+					}
+				}
+
 				if (finishReason) {
-					yield { type: 'done', finishReason: GEMINI_REASONS_MAP[finishReason] || finishReason, usage };
+					const fr = parts.some((p: any) => p.functionCall) ? 'tool_calls' : (GEMINI_REASONS_MAP[finishReason] || finishReason);
+					yield { type: 'done', finishReason: fr, usage };
 				}
 			}
 		}

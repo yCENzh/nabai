@@ -137,7 +137,7 @@ export async function handleDeleteProvider(request: Request, storage: DurableObj
 
 // ─── API Keys (with provider association) ───
 
-export async function handleApiKeys(request: Request, sql: DurableObjectStorage['sql']): Promise<Response> {
+export async function handleApiKeys(request: Request, storage: DurableObjectStorage): Promise<Response> {
 	try {
 		const { keys, provider_ids, health_check_enabled } = (await request.json()) as {
 			keys: string[]; provider_ids?: string[]; health_check_enabled?: boolean;
@@ -151,17 +151,19 @@ export async function handleApiKeys(request: Request, sql: DurableObjectStorage[
 		const hce = health_check_enabled !== false ? 1 : 0;
 		let added = 0;
 		let skipped = 0;
-		for (const key of keys) {
-			if (typeof key !== 'string' || !key.trim()) continue;
-			const existing = Array.from(sql.exec('SELECT 1 FROM api_keys WHERE api_key = ?', key).raw<[number]>());
-			if (existing.length > 0) { skipped++; continue; }
-			const keyId = crypto.randomUUID();
-			sql.exec('INSERT INTO api_keys (id, api_key, health_check_enabled) VALUES (?, ?, ?)', keyId, key, hce);
-			for (const pid of provider_ids) {
-				sql.exec('INSERT OR IGNORE INTO key_providers (id, api_key, provider_id) VALUES (?, ?, ?)', crypto.randomUUID(), key, pid);
+		storage.transactionSync(() => {
+			for (const key of keys) {
+				if (typeof key !== 'string' || !key.trim()) continue;
+				const existing = Array.from(storage.sql.exec('SELECT 1 FROM api_keys WHERE api_key = ?', key).raw<[number]>());
+				if (existing.length > 0) { skipped++; continue; }
+				const keyId = crypto.randomUUID();
+				storage.sql.exec('INSERT INTO api_keys (id, api_key, health_check_enabled) VALUES (?, ?, ?)', keyId, key, hce);
+				for (const pid of provider_ids) {
+					storage.sql.exec('INSERT OR IGNORE INTO key_providers (id, api_key, provider_id) VALUES (?, ?, ?)', crypto.randomUUID(), key, pid);
+				}
+				added++;
 			}
-			added++;
-		}
+		});
 		if (added === 0) {
 			return jsonResponse({ error: '密钥已存在，未添加任何新密钥。' }, 409);
 		}

@@ -178,6 +178,7 @@ export class AnthropicProvider implements Provider {
 			method: 'POST',
 			headers,
 			body: JSON.stringify(body),
+			signal: AbortSignal.timeout(120_000),
 		});
 		return { response };
 	}

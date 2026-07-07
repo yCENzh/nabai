@@ -10,7 +10,10 @@ interface EmbeddingsRequest {
 	dimensions?: number;
 }
 
-async function handleEmbeddings(req: EmbeddingsRequest, apiKey: string, baseUrl: string, providerType: string) {
+	async function handleEmbeddings(req: EmbeddingsRequest, apiKey: string, baseUrl: string, providerType: string) {
+	if (providerType === 'anthropic') {
+		throw new HttpError('Anthropic does not support embeddings', 400);
+	}
 	if (typeof req.model !== 'string') {
 		throw new HttpError('model is not specified', 400);
 	}
