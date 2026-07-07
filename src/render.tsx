@@ -3,6 +3,8 @@ import { jsx } from 'hono/jsx';
 const escapeHtml = (str: string) =>
 	str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
 
+const HINT_PATH = 'https://YOUR-DOMAIN/e/{id}';
+
 export const Render = ({ isAuthenticated, showWarning }: { isAuthenticated: boolean; showWarning: boolean }) => {
 	if (!isAuthenticated) {
 		return (
@@ -354,9 +356,11 @@ export const Render = ({ isAuthenticated, showWarning }: { isAuthenticated: bool
 								<div class="form-row">
 									<div class="form-field">
 										<label>ID</label>
-										<input type="text" id="ef-id" placeholder="main" required />									<div class="text-muted" style="font-size:12px;margin-top:2px;">
-										访问路径：<span id="ef-path-display"></span>
-									</div>									</div>
+									<input type="text" id="ef-id" placeholder="main" required />
+									<div class="text-muted" style="font-size:12px;margin-top:2px;">
+										访问路径：<span id="ef-path-display"></span><span id="ef-path-hint">{HINT_PATH}</span>
+									</div>
+								</div>
 
 								</div>
 								<div class="form-field" style="margin-bottom:12px;">

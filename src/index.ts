@@ -273,10 +273,14 @@ async function scheduledHandler(controller: ScheduledController, env: Env, ctx: 
 		if (!rows || rows.length === 0) return;
 
 		const updates: Array<{ api_key: string; key_group: string }> = [];
-		for (const row of rows) {
-			const ok = await healthCheckKey(row.apiKey, row.providerType, row.baseUrl, row.model, row.providerName);
-			if (ok) {
-				updates.push({ api_key: row.apiKey, key_group: 'normal' });
+		const concurrency = 5;
+		for (let i = 0; i < rows.length; i += concurrency) {
+			const batch = rows.slice(i, i + concurrency);
+			const results = await Promise.all(batch.map(row =>
+				healthCheckKey(row.apiKey, row.providerType, row.baseUrl, row.model, row.providerName)
+			));
+			for (let j = 0; j < results.length; j++) {
+				if (results[j]) updates.push({ api_key: batch[j].apiKey, key_group: 'normal' });
 			}
 		}
 

@@ -402,10 +402,13 @@ function confirmModal(title, body, buttons) {
 
 	function updatePathPreview(id) {
 		const display = document.getElementById('ef-path-display');
+		const hint = document.getElementById('ef-path-hint');
 		if (id) {
-			display.textContent = id === 'default' ? '/v1' : '/e/' + id;
+			display.textContent = location.origin + (id === 'default' ? '/v1' : '/e/' + id);
+			hint.style.display = 'none';
 		} else {
 			display.textContent = '';
+			hint.style.display = '';
 		}
 	}
 	document.getElementById('ef-id').addEventListener('blur', (e) => updatePathPreview(e.target.value));

@@ -42,7 +42,10 @@ export function transformConfig(req: any) {
 		switch (req.response_format.type) {
 			case 'json_schema':
 				cfg.responseSchema = JSON.parse(JSON.stringify(req.response_format.json_schema?.schema ?? null));
-				if (cfg.responseSchema) adjustSchema({ object: cfg.responseSchema });
+				if (cfg.responseSchema) {
+					delete cfg.responseSchema.strict;
+					adjustProps(cfg.responseSchema);
+				}
 				if (cfg.responseSchema && 'enum' in cfg.responseSchema) {
 					cfg.responseMimeType = 'text/x.enum';
 					break;
@@ -136,12 +139,15 @@ export async function parseImg(url: string) {
 	let mimeType, data;
 	if (url.startsWith('http://') || url.startsWith('https://')) {
 		try {
-			const response = await fetch(url);
+			const response = await fetch(url, { signal: AbortSignal.timeout(10_000) });
 			if (!response.ok) {
 				throw new Error(`${response.status} ${response.statusText} (${url})`);
 			}
 			mimeType = response.headers.get('content-type');
+			const size = parseInt(response.headers.get('content-length') || '0', 10);
+			if (size > 20_000_000) throw new Error('Image too large (>20MB)');
 			const buf = new Uint8Array(await response.arrayBuffer());
+			if (buf.length > 20_000_000) throw new Error('Image too large (>20MB)');
 			data = btoa(new TextDecoder('latin1').decode(buf));
 		} catch (err) {
 			throw new Error('Error fetching image: ' + (err as Error).message);
