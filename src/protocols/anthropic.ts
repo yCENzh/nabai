@@ -128,7 +128,7 @@ export class AnthropicProtocolAdapter implements ProtocolAdapter {
 			}
 		}
 
-		const body = {
+		const body: any = {
 			id: opts.requestId,
 			type: 'message',
 			role: 'assistant',
@@ -136,6 +136,7 @@ export class AnthropicProtocolAdapter implements ProtocolAdapter {
 			model: response.model,
 			stop_reason: mapFinishReason(response.choices[0]?.finish_reason),
 		};
+		if (response.usage) body.usage = { input_tokens: response.usage.input_tokens ?? 0, output_tokens: response.usage.output_tokens ?? 0 };
 
 		return new Response(JSON.stringify(body), {
 			headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' },

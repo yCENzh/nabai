@@ -56,6 +56,7 @@ export class AnthropicProvider implements Provider {
 				message,
 				finish_reason: STOP_REASON_MAP[data.stop_reason] ?? data.stop_reason ?? 'stop',
 			}],
+			usage: data.usage,
 		};
 	}
 

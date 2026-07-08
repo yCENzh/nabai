@@ -49,4 +49,5 @@ export interface CanonicalResponse {
 		message: { role: string; content: string | null; reasoning_content?: string; tool_calls?: Array<{ id: string; type: string; function: { name: string; arguments: string } }> };
 		finish_reason: string;
 	}>;
+	usage?: { input_tokens?: number; output_tokens?: number };
 }

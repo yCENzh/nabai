@@ -79,10 +79,10 @@ async function handleCompletions(request: Request, apiKey: string, provider: Pro
 			if (!upstreamResp.ok) {
 				const errText = await upstreamResp.text();
 				console.error('Upstream error:', errText);
-				return new Response(JSON.stringify({ error: errText || 'Upstream error' }), {
-					headers: { 'Content-Type': 'application/json', ...fixCors(upstreamResp).headers },
-					status: upstreamResp.status,
-				});
+				return adapter.renderError(
+					new HttpError(errText || 'Upstream error', upstreamResp.status),
+					{ requestId }
+				);
 			}
 			const data: any = await upstreamResp.json();
 			if (provider.type === 'gemini' && !data.candidates) {
@@ -104,10 +104,10 @@ async function handleCompletions(request: Request, apiKey: string, provider: Pro
 		if (!response.ok) {
 			const errText = await response.text();
 			console.error('Upstream error:', errText);
-			return new Response(JSON.stringify({ error: errText || 'Upstream error' }), {
-				headers: { 'Content-Type': 'application/json', ...fixCors(response).headers },
-				status: response.status,
-			});
+			return adapter.renderError(
+				new HttpError(errText || 'Upstream error', response.status),
+				{ requestId }
+			);
 		}
 
 		const events = provider.parseStream(response, canonical);
