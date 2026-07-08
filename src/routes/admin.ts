@@ -229,19 +229,21 @@ export async function handleDeleteApiKeys(request: Request, storage: DurableObje
 	}
 }
 
-export async function handleToggleApiKeys(request: Request, sql: DurableObjectStorage['sql']): Promise<Response> {
+export async function handleToggleApiKeys(request: Request, storage: DurableObjectStorage): Promise<Response> {
 	try {
 		const { keys, enabled } = (await request.json()) as { keys: string[]; enabled: boolean };
 		if (!Array.isArray(keys) || keys.length === 0) {
 			return jsonResponse({ error: '请求体无效，需要一个包含key的非空数组。' }, 400);
 		}
 		const val = enabled ? 1 : 0;
-		const batchSize = 500;
-		for (let i = 0; i < keys.length; i += batchSize) {
-			const batch = keys.slice(i, i + batchSize);
-			const placeholders = batch.map(() => '?').join(',');
-			sql.exec(`UPDATE api_keys SET enabled = ? WHERE api_key IN (${placeholders})`, val, ...batch);
-		}
+		storage.transactionSync(() => {
+			const batchSize = 500;
+			for (let i = 0; i < keys.length; i += batchSize) {
+				const batch = keys.slice(i, i + batchSize);
+				const placeholders = batch.map(() => '?').join(',');
+				storage.sql.exec(`UPDATE api_keys SET enabled = ? WHERE api_key IN (${placeholders})`, val, ...batch);
+			}
+		});
 		return jsonResponse({ message: `已${enabled ? '启用' : '禁用'} ${keys.length} 个密钥。` });
 	} catch (error: any) {
 		return jsonResponse({ error: error.message || '内部服务器错误' }, 500);
@@ -326,12 +328,14 @@ export async function handleUpsertModel(request: Request, storage: DurableObject
 	}
 }
 
-export async function handleDeleteModel(request: Request, sql: DurableObjectStorage['sql']): Promise<Response> {
+export async function handleDeleteModel(request: Request, storage: DurableObjectStorage): Promise<Response> {
 	try {
 		const { model } = (await request.json()) as { model?: string };
 		if (!model) return jsonResponse({ error: 'model 是必填项' }, 400);
-		sql.exec('DELETE FROM key_models WHERE model = ?', model);
-		sql.exec('DELETE FROM endpoint_models WHERE model = ?', model);
+		storage.transactionSync(() => {
+			storage.sql.exec('DELETE FROM key_models WHERE model = ?', model);
+			storage.sql.exec('DELETE FROM endpoint_models WHERE model = ?', model);
+		});
 		return jsonResponse({ message: `模型 "${model}" 已删除。` });
 	} catch (error: any) {
 		return jsonResponse({ error: error.message }, 500);

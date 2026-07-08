@@ -57,7 +57,7 @@ export class LoadBalancer extends DurableObject {
 			if (pathname === '/api/keys' && request.method === 'PUT') return handleUpdateApiKey(request, this.ctx.storage);
 			if (pathname === '/api/keys' && request.method === 'GET') return getAllApiKeys(request, this.ctx.storage.sql);
 			if (pathname === '/api/keys' && request.method === 'DELETE') return handleDeleteApiKeys(request, this.ctx.storage);
-			if (pathname === '/api/keys' && request.method === 'PATCH') return handleToggleApiKeys(request, this.ctx.storage.sql);
+			if (pathname === '/api/keys' && request.method === 'PATCH') return handleToggleApiKeys(request, this.ctx.storage);
 
 			// Providers
 			if (pathname === '/api/providers' && request.method === 'GET') return handleGetProviders(this.ctx.storage.sql);
@@ -72,7 +72,7 @@ export class LoadBalancer extends DurableObject {
 			// Models
 			if (pathname === '/api/models' && request.method === 'GET') return handleGetModels(this.ctx.storage.sql);
 			if (pathname === '/api/models' && request.method === 'POST') return handleUpsertModel(request, this.ctx.storage);
-			if (pathname === '/api/models' && request.method === 'DELETE') return handleDeleteModel(request, this.ctx.storage.sql);
+			if (pathname === '/api/models' && request.method === 'DELETE') return handleDeleteModel(request, this.ctx.storage);
 
 			// Backup / Restore
 			if (pathname === '/api/backup' && request.method === 'GET') return handleBackup(this.ctx.storage.sql);
