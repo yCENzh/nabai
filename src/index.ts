@@ -229,7 +229,7 @@ app.all('*', async (c) => {
 				headers: { 'Content-Type': 'application/json', ...fixCors({}).headers },
 			});
 		}
-		const data = (models as string[]).map((id: string) => ({ id, object: 'model' }));
+		const data = (models as string[]).map((id: string) => ({ id, object: 'model', created: 0, owned_by: 'system' }));
 		return new Response(JSON.stringify({ object: 'list', data }), {
 			headers: { 'Content-Type': 'application/json', ...fixCors({}).headers },
 		});

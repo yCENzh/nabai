@@ -193,6 +193,10 @@ export class AnthropicProtocolAdapter implements ProtocolAdapter {
 								send('content_block_stop', { type: 'content_block_stop', index: contentIndex });
 								contentIndex++;
 								hasThinking = false;
+							} else if (hasToolUse) {
+								send('content_block_stop', { type: 'content_block_stop', index: contentIndex });
+								contentIndex++;
+								hasToolUse = false;
 							}
 							if (!hasText) {
 								hasText = true;

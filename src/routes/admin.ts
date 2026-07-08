@@ -470,6 +470,9 @@ export async function handleRestore(request: Request, storage: DurableObjectStor
 			storage.sql.exec('DELETE FROM providers');
 			storage.sql.exec('DELETE FROM endpoints');
 
+			// Ensure default endpoint always exists after restore
+			storage.sql.exec("INSERT OR IGNORE INTO endpoints (id, enabled) VALUES ('default', 1)");
+
 			for (const p of data.providers) {
 				if (!p.id || !p.type || !p.name || !p.base_url) continue;
 				storage.sql.exec(
