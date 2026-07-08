@@ -213,6 +213,7 @@ export const Render = ({ isAuthenticated, showWarning }: { isAuthenticated: bool
 									<div class="form-field">
 										<label>Base URL</label>
 										<input type="text" id="pf-base-url" placeholder="https://api.openai.com/v1" required />
+										<div class="text-muted" style="font-size:11px;margin-top:2px;" id="pf-base-url-hint"></div>
 									</div>
 								</div>
 								<div class="form-actions">

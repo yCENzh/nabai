@@ -124,6 +124,18 @@ function confirmModal(title, body, buttons) {
 		} catch (e) { console.error('loadProviders:', e); providersTableBody.innerHTML = '<tr class="empty-row"><td colspan="6">加载失败</td></tr>'; }
 	}
 
+	const BASE_URL_HINTS = {
+		openai_compat: '示例: https://api.openai.com/v1（需包含 /v1）',
+		gemini: '示例: https://generativelanguage.googleapis.com',
+		anthropic: '示例: https://api.anthropic.com（无需 /v1）',
+	};
+	function updateBaseUrlHint() {
+		const type = document.getElementById('pf-type').value;
+		const hint = document.getElementById('pf-base-url-hint');
+		hint.textContent = BASE_URL_HINTS[type] || '';
+	}
+	document.getElementById('pf-type').addEventListener('change', updateBaseUrlHint);
+
 	providerForm.addEventListener('submit', async (e) => {
 		e.preventDefault();
 		const data = {
@@ -158,31 +170,39 @@ function confirmModal(title, body, buttons) {
 		const btn = e.target.closest('button');
 		if (!btn) return;
 		if (btn.classList.contains('del-provider')) {
-			const action = await confirmModal(
-				'删除 Provider',
-				'确定删除此 Provider？仅关联此 Provider 的密钥将一并删除，关联了多个 Provider 的密钥不受影响。',
-				[
+			// 提前查该 provider 的 sole key 数量，以决定弹窗按钮
+			const keysResp = await fetch('/api/keys?page=1&pageSize=9999');
+			const { keys } = await keysResp.json();
+			const providerKeys = keys.filter(k => (k.provider_ids || []).includes(btn.dataset.id) && k.provider_ids.length === 1);
+			const soleCount = providerKeys.length;
+
+			let body, buttons;
+			if (soleCount > 0) {
+				body = `确定删除此 Provider？${soleCount} 个仅关联此 Provider 的密钥将一并删除并可供导出。`;
+				buttons = [
 					{ label: '取消', value: 'cancel' },
 					{ label: '导出密钥后删除', value: 'export', primary: true },
 					{ label: '直接删除', value: 'delete', danger: true },
-				]
-			);
+				];
+			} else {
+				body = '确定删除此 Provider？该 Provider 当前没有绑定任何密钥。';
+				buttons = [
+					{ label: '取消', value: 'cancel' },
+					{ label: '确定删除', value: 'delete', danger: true },
+				];
+			}
+			const action = await confirmModal('删除 Provider', body, buttons);
 			if (action === 'cancel') return;
 			if (action === 'export') {
-				const keysResp = await fetch('/api/keys?page=1&pageSize=9999');
-				const { keys } = await keysResp.json();
-				const providerKeys = keys.filter(k => (k.provider_ids || []).includes(btn.dataset.id) && k.provider_ids.length === 1);
-				if (providerKeys.length > 0) {
-					const exportText = providerKeys.map(k => k.api_key).join('\n');
-					await navigator.clipboard.writeText(exportText);
-					const blob = new Blob([exportText], { type: 'text/plain' });
-					const a = document.createElement('a');
-					a.href = URL.createObjectURL(blob);
-					a.download = 'nabai-keys-' + btn.dataset.id + '.txt';
-					a.click();
-					URL.revokeObjectURL(a.href);
-					toast('已导出 ' + providerKeys.length + ' 个密钥到剪贴板和文件');
-				}
+				const exportText = providerKeys.map(k => k.api_key).join('\n');
+				await navigator.clipboard.writeText(exportText);
+				const blob = new Blob([exportText], { type: 'text/plain' });
+				const a = document.createElement('a');
+				a.href = URL.createObjectURL(blob);
+				a.download = 'nabai-keys-' + btn.dataset.id + '.txt';
+				a.click();
+				URL.revokeObjectURL(a.href);
+				toast('已导出 ' + providerKeys.length + ' 个密钥到剪贴板和文件');
 			}
 			const resp = await fetch('/api/providers', { method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: btn.dataset.id }) });
 			const result = await resp.json();
@@ -194,6 +214,7 @@ function confirmModal(title, body, buttons) {
 			document.getElementById('pf-id').value = btn.dataset.id;
 			document.getElementById('pf-id').disabled = true;
 			document.getElementById('pf-type').value = btn.dataset.type;
+			updateBaseUrlHint();
 			document.getElementById('pf-name').value = btn.dataset.name;
 			document.getElementById('pf-base-url').value = btn.dataset.url;
 			document.getElementById('pf-enabled').checked = btn.dataset.enabled === '1';
@@ -672,5 +693,6 @@ function confirmModal(title, body, buttons) {
 	});
 
 	// Initial load
+	updateBaseUrlHint();
 	loadProviders();
 });

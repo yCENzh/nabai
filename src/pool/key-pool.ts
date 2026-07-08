@@ -7,36 +7,48 @@ export async function healthCheckKey(
 	model: string,
 	providerName?: string
 ): Promise<boolean> {
+	const cleanUrl = baseUrl.replace(/\/+$/, '');
 	try {
-		const cleanUrl = baseUrl.replace(/\/+$/, '');
-
 		let resp: Response;
+		let url: string;
+		let reqBody: string;
 		if (providerType === 'gemini') {
 			const m = model.startsWith('models/') ? model.substring(7) : model;
-			resp = await fetch(`${cleanUrl}/v1beta/models/${m}:generateContent?key=${apiKey}`, {
+			url = `${cleanUrl}/v1beta/models/${m}:generateContent?key=${apiKey}`;
+			reqBody = JSON.stringify({ contents: [{ parts: [{ text: 'hi' }] }] });
+			resp = await fetch(url, {
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify({ contents: [{ parts: [{ text: 'hi' }] }] }),
+				body: reqBody,
 				signal: AbortSignal.timeout(15_000),
 			});
 		} else if (providerType === 'anthropic') {
-			resp = await fetch(`${cleanUrl}/v1/messages`, {
+			url = `${cleanUrl}/v1/messages`;
+			reqBody = JSON.stringify({ model, max_tokens: 1, messages: [{ role: 'user', content: 'hi' }] });
+			resp = await fetch(url, {
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json', 'x-api-key': apiKey, 'anthropic-version': '2023-06-01' },
-				body: JSON.stringify({ model, max_tokens: 1, messages: [{ role: 'user', content: 'hi' }] }),
+				body: reqBody,
 				signal: AbortSignal.timeout(15_000),
 			});
 		} else {
-			resp = await fetch(`${cleanUrl}/chat/completions`, {
+			url = `${cleanUrl}/chat/completions`;
+			reqBody = JSON.stringify({ model, max_tokens: 1, messages: [{ role: 'user', content: 'hi' }] });
+			resp = await fetch(url, {
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },
-				body: JSON.stringify({ model, max_tokens: 1, messages: [{ role: 'user', content: 'hi' }] }),
+				body: reqBody,
 				signal: AbortSignal.timeout(15_000),
 			});
 		}
 
 		if (!resp.ok) {
-			console.log(`[health] FAIL key=${maskKey(apiKey)} provider=${providerName || ''}(${providerType}) model=${model} status=${resp.status}`);
+			const resBody = await resp.text().catch(() => '');
+			console.log(`[health] FAIL provider=${providerName || ''}(${providerType})
+POST ${url}
+> ${reqBody}
+< HTTP ${resp.status}
+${resBody.slice(0, 500)}`);
 		}
 		return resp.ok;
 	} catch (e) {

@@ -124,6 +124,8 @@ export async function handleDeleteProvider(request: Request, storage: DurableObj
 
 			storage.sql.exec('DELETE FROM key_providers WHERE provider_id = ?', id);
 			storage.sql.exec('DELETE FROM providers WHERE id = ?', id);
+			// 清理悬空的 endpoint model 绑定
+			storage.sql.exec('DELETE FROM endpoint_models WHERE model NOT IN (SELECT DISTINCT model FROM key_models)');
 		});
 
 		return jsonResponse({
@@ -216,6 +218,8 @@ export async function handleDeleteApiKeys(request: Request, storage: DurableObje
 				storage.sql.exec(`DELETE FROM key_providers WHERE api_key IN (${placeholders})`, ...batch);
 				storage.sql.exec(`DELETE FROM api_keys WHERE api_key IN (${placeholders})`, ...batch);
 			}
+			// 清理悬空的 endpoint model 绑定
+			storage.sql.exec('DELETE FROM endpoint_models WHERE model NOT IN (SELECT DISTINCT model FROM key_models)');
 		});
 
 		return jsonResponse({ message: 'API密钥删除成功。' });
