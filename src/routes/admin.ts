@@ -85,7 +85,8 @@ export async function handleUpsertProvider(request: Request, sql: DurableObjectS
 		if (!VALID_PROVIDER_TYPES.has(type)) {
 			return jsonResponse({ error: `无效的 Provider 类型，支持：${Array.from(VALID_PROVIDER_TYPES).join(', ')}` }, 400);
 		}
-		if (!validateUrl(base_url)) {
+		const cleanUrl = base_url.replace(/\/+$/, '');
+		if (!validateUrl(cleanUrl)) {
 			return jsonResponse({ error: 'base_url 不是合法的 URL' }, 400);
 		}
 		if (config_json) {
@@ -95,7 +96,7 @@ export async function handleUpsertProvider(request: Request, sql: DurableObjectS
 			`INSERT INTO providers (id, type, name, base_url, enabled, config_json, updated_at)
 			 VALUES (?, ?, ?, ?, ?, ?, unixepoch())
 			 ON CONFLICT(id) DO UPDATE SET type=excluded.type, name=excluded.name, base_url=excluded.base_url, enabled=excluded.enabled, config_json=excluded.config_json, updated_at=unixepoch()`,
-			id, type, name, base_url, enabled !== false ? 1 : 0, config_json ?? '{}'
+			id, type, name, cleanUrl, enabled !== false ? 1 : 0, config_json ?? '{}'
 		);
 		return jsonResponse({ message: 'Provider 保存成功。' });
 	} catch (error: any) {
@@ -394,6 +395,7 @@ export async function handleDeleteEndpoint(request: Request, sql: DurableObjectS
 	try {
 		const { id } = await request.json() as DeleteBody;
 		if (!id) return jsonResponse({ error: 'id 是必填项' }, 400);
+		if (!validateId(id!)) return jsonResponse({ error: 'ID 只能包含英文字母、数字、下划线和连字符' }, 400);
 		if (id === 'default') return jsonResponse({ error: '默认端点不可删除' }, 400);
 		sql.exec('DELETE FROM endpoint_models WHERE endpoint_id = ?', id);
 		sql.exec('DELETE FROM endpoints WHERE id = ?', id);
