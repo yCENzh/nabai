@@ -253,7 +253,7 @@ export async function handleToggleApiKeys(request: Request, storage: DurableObje
 export async function getAllApiKeys(request: Request, sql: DurableObjectStorage['sql']): Promise<Response> {
 	try {
 		const url = new URL(request.url);
-		const page = parseInt(url.searchParams.get('page') || '1', 10);
+		const page = Math.max(1, parseInt(url.searchParams.get('page') || '1', 10) || 1);
 		const pageSize = parseInt(url.searchParams.get('pageSize') || '50', 10);
 		const offset = (page - 1) * pageSize;
 

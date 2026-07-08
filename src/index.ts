@@ -275,10 +275,18 @@ async function scheduledHandler(controller: ScheduledController, env: Env, ctx: 
 		const { rows } = await resp.json() as { rows?: Array<{ apiKey: string; providerType: string; providerName: string; baseUrl: string; model: string }> };
 		if (!rows || rows.length === 0) return;
 
+		// Deduplicate by apiKey: same key may appear once per model
+		const seen = new Set<string>();
+		const deduped = rows.filter(r => {
+			if (seen.has(r.apiKey)) return false;
+			seen.add(r.apiKey);
+			return true;
+		});
+
 		const updates: Array<{ api_key: string; key_group: string }> = [];
 		const concurrency = 5;
-		for (let i = 0; i < rows.length; i += concurrency) {
-			const batch = rows.slice(i, i + concurrency);
+		for (let i = 0; i < deduped.length; i += concurrency) {
+			const batch = deduped.slice(i, i + concurrency);
 			const results = await Promise.all(batch.map(row =>
 				healthCheckKey(row.apiKey, row.providerType, row.baseUrl, row.model, row.providerName)
 			));
