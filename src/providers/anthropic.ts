@@ -123,7 +123,9 @@ export class AnthropicProvider implements Provider {
 						input,
 					};
 				});
-				content = Array.isArray(content) ? [...content, ...toolUseBlocks] : toolUseBlocks;
+				// Merge tool use blocks with existing content instead of overwriting
+				const textContent = Array.isArray(content) ? content : (typeof content === 'string' && content ? [{ type: 'text', text: content }] : []);
+				content = [...textContent, ...toolUseBlocks];
 			}
 
 			messages.push({ role: msg.role === 'assistant' ? 'assistant' : 'user', content });

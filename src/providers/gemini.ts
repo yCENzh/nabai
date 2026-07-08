@@ -229,6 +229,7 @@ function adjustProps(schemaPart: any) {
 	if (Array.isArray(schemaPart)) {
 		schemaPart.forEach((item) => adjustProps(item));
 	} else {
+		delete schemaPart.strict;
 		if (schemaPart.type === 'object' && schemaPart.properties && schemaPart.additionalProperties === false) {
 			delete schemaPart.additionalProperties;
 		}

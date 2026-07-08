@@ -70,7 +70,7 @@ export class OpenAICompatProvider implements Provider {
 				if (otherBlocks.length > 0) messages.push({ role: 'user', content: otherBlocks.length === 1 && otherBlocks[0].type === 'text' ? otherBlocks[0].text : otherBlocks });
 				messages.push(...toolResults);
 			} else {
-				messages.push({ role: m.role, content: m.content, ...(m.name ? { name: m.name } : {}), ...(m.tool_call_id ? { tool_call_id: m.tool_call_id } : {}) });
+				messages.push({ role: m.role, content: m.content, ...(m.name ? { name: m.name } : {}), ...(m.tool_call_id ? { tool_call_id: m.tool_call_id } : {}), ...(m.tool_calls ? { tool_calls: m.tool_calls } : {}) });
 			}
 		}
 

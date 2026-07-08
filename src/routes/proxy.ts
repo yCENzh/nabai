@@ -127,7 +127,7 @@ export async function handleOpenAI(
 	const { apiKey, provider, providerName, baseUrl, providerType } = config;
 	const queryParams = url.searchParams;
 
-	const assert = (success: Boolean) => {
+	const assert = (success: boolean) => {
 		if (!success) {
 			throw new HttpError('The specified HTTP method is not allowed for the requested resource', 400);
 		}
@@ -147,7 +147,12 @@ export async function handleOpenAI(
 			return handleCompletions(request, apiKey, provider, providerName, queryParams).catch(errHandler);
 		case pathname.endsWith('/embeddings'):
 			assert(request.method === 'POST');
-			return handleEmbeddings(await request.json(), apiKey, baseUrl, providerType).catch(errHandler);
+			try {
+				const body = await request.json();
+				return handleEmbeddings(body, apiKey, baseUrl, providerType).catch(errHandler);
+			} catch {
+				return errHandler(new HttpError('Invalid JSON in request body', 400));
+			}
 		default:
 			throw new HttpError('404 Not Found', 404);
 	}
