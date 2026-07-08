@@ -42,16 +42,17 @@ async function resolveConfigAndAuth(
 	stub: DurableObjectStub, endpointId: string, model: string | undefined,
 	env: { AUTH_KEY: string }, clientKey: string | null
 ): Promise<Response | { providerType: string; providerName: string; baseUrl: string; apiKey: string }> {
+	// 认证在 DO 调用之前，避免未认证请求消耗 DO 资源
+	if (clientKey !== env.AUTH_KEY) {
+		return new Response('Unauthorized', { status: 401, headers: fixCors({}).headers });
+	}
+
 	const { data: cfg, status: resolveStatus } = await resolveConfig(stub, endpointId, model);
 	if (cfg.error) {
 		return new Response(JSON.stringify({ error: cfg.error }), {
 			status: resolveStatus,
 			headers: { 'Content-Type': 'application/json', ...fixCors({}).headers },
 		});
-	}
-
-	if (clientKey !== env.AUTH_KEY) {
-		return new Response('Unauthorized', { status: 401, headers: fixCors({}).headers });
 	}
 	if (!cfg.apiKey) {
 		return new Response(JSON.stringify({ error: 'No API keys configured for this endpoint.' }), {

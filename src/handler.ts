@@ -183,7 +183,8 @@ export class LoadBalancer extends DurableObject {
 		if (pathname === '/__batch-update-key-group' && request.method === 'POST') {
 			try {
 				const { updates } = await request.json() as { updates: Array<{ api_key: string; key_group: string }> };
-				const batchSize = 500;
+				// 300 × (2 CASE params + 1 IN param) = 900 < SQLite 默认参数上限(999)
+				const batchSize = 300;
 				for (let i = 0; i < updates.length; i += batchSize) {
 					const batch = updates.slice(i, i + batchSize);
 					this.ctx.storage.sql.exec(
