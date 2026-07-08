@@ -1,4 +1,4 @@
-import type { CanonicalRequest, CanonicalResponse, CanonicalStreamEvent } from '../core/types';
+import type { CanonicalRequest, CanonicalResponse, CanonicalStreamEvent } from './types';
 
 export interface ProtocolAdapter {
 	readonly protocol: string;

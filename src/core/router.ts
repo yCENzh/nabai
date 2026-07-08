@@ -37,12 +37,12 @@ export function stripEndpointPrefix(pathname: string): string {
 	return pathname.replace(/^\/e\/[^/]+/, '');
 }
 
-export interface EndpointConfig {
+interface EndpointConfig {
 	id: string;
 	enabled: boolean;
 }
 
-export interface ResolvedProvider {
+interface ResolvedProvider {
 	provider: Provider;
 	providerName: string;
 	baseUrl: string;

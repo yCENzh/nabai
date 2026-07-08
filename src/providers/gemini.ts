@@ -1,5 +1,5 @@
 import { HttpError, BASE_URL, API_VERSION, makeHeaders, streamSSELines, STREAM_TIMEOUT_MS } from '../core/utils';
-import type { CanonicalRequest, CanonicalResponse, CanonicalStreamEvent, ContentBlock, CanonicalMessage } from '../core/types';
+import type { CanonicalRequest, CanonicalResponse, CanonicalStreamEvent, ContentBlock, CanonicalMessage } from '../canonical/types';
 import type { Provider, ProviderContext } from './base';
 
 const HARM_CATEGORIES = [

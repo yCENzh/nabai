@@ -12,7 +12,7 @@ export type ContentBlock =
 	| { type: 'input_audio'; input_audio: { format: string; data: string } }
 	| { type: 'input_json'; json: { id?: string; name?: string; arguments?: unknown; tool_call_id?: string; result?: unknown } };
 
-export interface CanonicalTool {
+interface CanonicalTool {
 	type: 'function';
 	function: {
 		name: string;

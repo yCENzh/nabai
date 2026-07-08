@@ -1,6 +1,6 @@
 import { HttpError } from '../core/utils';
-import type { CanonicalRequest, CanonicalResponse, CanonicalStreamEvent } from '../core/types';
-import type { ProtocolAdapter } from './base';
+import type { CanonicalRequest, CanonicalResponse, CanonicalStreamEvent } from '../canonical/types';
+import type { ProtocolAdapter } from '../canonical/adapter';
 
 export class AnthropicProtocolAdapter implements ProtocolAdapter {
 	readonly protocol = 'anthropic';
@@ -70,6 +70,11 @@ export class AnthropicProtocolAdapter implements ProtocolAdapter {
 			else if (body.tool_choice.type === 'tool') tool_choice = { type: 'function', name: body.tool_choice.name };
 		}
 
+		// Anthropic output_config.effort → cross-protocol reasoning_effort in metadata
+		if (body.output_config?.effort) {
+			body.reasoning_effort = body.output_config.effort;
+		}
+
 		const metadata = { ...body };
 		delete metadata.model;
 		delete metadata.messages;
@@ -80,6 +85,11 @@ export class AnthropicProtocolAdapter implements ProtocolAdapter {
 		delete metadata.temperature;
 		delete metadata.top_p;
 		delete metadata.stream;
+		delete metadata.reasoning_effort;
+		delete metadata.output_config;
+		// reasoning_effort goes into metadata as cross-protocol bridge
+		if (body.reasoning_effort) metadata.reasoning_effort = body.reasoning_effort;
+		// thinking stays in metadata for Anthropic provider native passthrough
 
 		return {
 			requestId: opts.requestId,

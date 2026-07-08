@@ -1,5 +1,5 @@
 import { streamSSELines, STREAM_TIMEOUT_MS } from '../core/utils';
-import type { CanonicalRequest, CanonicalResponse, CanonicalStreamEvent, ContentBlock } from '../core/types';
+import type { CanonicalRequest, CanonicalResponse, CanonicalStreamEvent, ContentBlock } from '../canonical/types';
 import type { Provider, ProviderContext } from './base';
 
 /**

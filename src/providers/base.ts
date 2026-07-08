@@ -1,4 +1,4 @@
-import type { CanonicalRequest, CanonicalResponse, CanonicalStreamEvent } from '../core/types';
+import type { CanonicalRequest, CanonicalResponse, CanonicalStreamEvent } from '../canonical/types';
 
 export interface ProviderContext {
 	apiKey: string;

@@ -1,6 +1,6 @@
 import { HttpError } from '../core/utils';
-import type { CanonicalRequest, CanonicalResponse, CanonicalStreamEvent } from '../core/types';
-import type { ProtocolAdapter } from './base';
+import type { CanonicalRequest, CanonicalResponse, CanonicalStreamEvent } from '../canonical/types';
+import type { ProtocolAdapter } from '../canonical/adapter';
 
 export class OpenAIProtocolAdapter implements ProtocolAdapter {
 	readonly protocol = 'openai';

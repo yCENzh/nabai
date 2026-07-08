@@ -1,5 +1,5 @@
 import { streamSSELines, STREAM_TIMEOUT_MS } from '../core/utils';
-import type { CanonicalRequest, CanonicalResponse, CanonicalStreamEvent, ContentBlock } from '../core/types';
+import type { CanonicalRequest, CanonicalResponse, CanonicalStreamEvent } from '../canonical/types';
 import type { Provider, ProviderContext } from './base';
 
 const ANTHROPIC_VERSION = '2023-06-01';
@@ -154,6 +154,11 @@ export class AnthropicProvider implements Provider {
 			if (req.tool_choice === 'auto') body.tool_choice = { type: 'auto' };
 			else if (req.tool_choice === 'none') body.tool_choice = { type: 'none' };
 			else if (typeof req.tool_choice === 'object') body.tool_choice = { type: 'tool', name: req.tool_choice.name };
+		}
+		// If output_config isn't already set natively (via metadata spread),
+		// convert reasoning_effort from metadata as fallback
+		if (!body.output_config && meta?.reasoning_effort) {
+			body.output_config = { effort: meta.reasoning_effort as string };
 		}
 
 		const headers: Record<string, string> = {
