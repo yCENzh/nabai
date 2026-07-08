@@ -2,8 +2,6 @@ import type { CanonicalRequest, CanonicalResponse, CanonicalStreamEvent } from '
 
 export interface ProviderContext {
 	apiKey: string;
-	baseUrl?: string;
-	signal?: AbortSignal;
 	requestHeaders?: Headers;
 	queryParams?: URLSearchParams;
 }

@@ -10,7 +10,7 @@ const HARM_CATEGORIES = [
 	'HARM_CATEGORY_CIVIC_INTEGRITY',
 ];
 
-export function transformConfig(req: any) {
+function transformConfig(req: any) {
 	const fieldsMap: Record<string, string> = {
 		frequency_penalty: 'frequencyPenalty',
 		max_completion_tokens: 'maxOutputTokens',
@@ -68,7 +68,7 @@ export function transformConfig(req: any) {
 	return cfg;
 }
 
-export async function transformMessages(messages: CanonicalMessage[]) {
+async function transformMessages(messages: CanonicalMessage[]) {
 	if (!messages) {
 		return {};
 	}
@@ -129,7 +129,7 @@ export async function transformMessages(messages: CanonicalMessage[]) {
 	return { system_instruction, contents };
 }
 
-export async function transformMsg({ content }: { content: string | ContentBlock[] }) {
+async function transformMsg({ content }: { content: string | ContentBlock[] }) {
 	const parts = [];
 	if (!Array.isArray(content)) {
 		parts.push({ text: content });
@@ -183,7 +183,7 @@ export async function transformMsg({ content }: { content: string | ContentBlock
 	return parts;
 }
 
-export async function parseImg(url: string) {
+async function parseImg(url: string) {
 	let mimeType, data;
 	if (url.startsWith('http://') || url.startsWith('https://')) {
 		try {
@@ -216,13 +216,13 @@ export async function parseImg(url: string) {
 	};
 }
 
-export function adjustSchema(schema: any) {
+function adjustSchema(schema: any) {
 	const obj = schema[schema.type];
 	delete obj.strict;
 	return adjustProps(schema);
 }
 
-export function adjustProps(schemaPart: any) {
+function adjustProps(schemaPart: any) {
 	if (typeof schemaPart !== 'object' || schemaPart === null) {
 		return;
 	}
@@ -236,7 +236,7 @@ export function adjustProps(schemaPart: any) {
 	}
 }
 
-export function transformTools(req: any) {
+function transformTools(req: any) {
 	let tools, tool_config;
 	if (req.tools) {
 		const funcs = req.tools.filter((tool: any) => tool.type === 'function' && tool.function?.name !== 'googleSearch');
@@ -259,7 +259,7 @@ export function transformTools(req: any) {
 	return { tools, tool_config };
 }
 
-export function parseThinkingParts(parts: any[]): { reasoningContent: string; finalContent: string } {
+function parseThinkingParts(parts: any[]): { reasoningContent: string; finalContent: string } {
 	let reasoningContent = '';
 	let finalContent = '';
 	for (const part of parts) {
@@ -278,7 +278,7 @@ export function parseThinkingParts(parts: any[]): { reasoningContent: string; fi
 	return { reasoningContent, finalContent };
 }
 
-export async function transformRequest(req: any) {
+async function transformRequest(req: any) {
 	const safetySettings = HARM_CATEGORIES.map((category) => ({
 		category,
 		threshold: 'BLOCK_NONE',
@@ -295,7 +295,7 @@ export async function transformRequest(req: any) {
 
 // ─── GeminiProvider: Canonical IR → Gemini native ───
 
-export const GEMINI_REASONS_MAP: Record<string, string> = {
+const GEMINI_REASONS_MAP: Record<string, string> = {
 	STOP: 'stop',
 	MAX_TOKENS: 'length',
 	SAFETY: 'content_filter',

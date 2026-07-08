@@ -17,10 +17,8 @@ export const fixCors = ({ headers, status, statusText }: { headers?: HeadersInit
 
 export const BASE_URL = 'https://generativelanguage.googleapis.com';
 export const API_VERSION = 'v1beta';
-export const API_CLIENT = 'genai-js/0.21.0';
-
 export const makeHeaders = (apiKey: string, more?: Record<string, string>) => ({
-	'x-goog-api-client': API_CLIENT,
+	'x-goog-api-client': 'genai-js/0.21.0',
 	...(apiKey && { 'x-goog-api-key': apiKey }),
 	...more,
 });
