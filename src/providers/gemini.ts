@@ -364,6 +364,8 @@ export class GeminiProvider implements Provider {
 			max_tokens: req.max_tokens,
 			stream: req.stream,
 			...(req.metadata as any),
+			thinking: undefined,
+			output_config: undefined,
 		};
 
 		let model = req.model?.startsWith('models/') ? req.model.substring(7) : req.model;

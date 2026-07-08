@@ -81,6 +81,8 @@ export class OpenAICompatProvider implements Provider {
 		if (meta?.extra_body && typeof meta.extra_body === 'object') {
 			Object.assign(body, meta.extra_body);
 		}
+		delete body.thinking;
+		delete body.output_config;
 		body.model = req.model;
 		body.messages = messages;
 		body.stream = req.stream ?? false;
