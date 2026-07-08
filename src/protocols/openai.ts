@@ -91,6 +91,7 @@ export class OpenAIProtocolAdapter implements ProtocolAdapter {
 					controller.enqueue(encoder.encode(`data: ${JSON.stringify({ error: { message: String(err), type: 'server_error' } })}\n\n`));
 				}
 				if (!doneSent) {
+					controller.enqueue(encoder.encode(`data: ${JSON.stringify({ id: opts.requestId, object: 'chat.completion.chunk', created: Math.floor(Date.now() / 1000), model: opts.model ?? '', choices: [{ index: 0, delta: {}, finish_reason: 'stop' }] })}\n\n`));
 					controller.enqueue(encoder.encode('data: [DONE]\n\n'));
 				}
 				controller.close();

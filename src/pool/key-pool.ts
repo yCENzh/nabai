@@ -12,31 +12,35 @@ export async function healthCheckKey(
 		let resp: Response;
 		let url: string;
 		let reqBody: string;
+		let reqHeaders: Record<string, string>;
 		if (providerType === 'gemini') {
 			const m = model.startsWith('models/') ? model.substring(7) : model;
 			url = `${cleanUrl}/v1beta/models/${m}:generateContent?key=${apiKey}`;
 			reqBody = JSON.stringify({ contents: [{ parts: [{ text: 'hi' }] }] });
+			reqHeaders = { 'Content-Type': 'application/json' };
 			resp = await fetch(url, {
 				method: 'POST',
-				headers: { 'Content-Type': 'application/json' },
+				headers: reqHeaders,
 				body: reqBody,
 				signal: AbortSignal.timeout(15_000),
 			});
 		} else if (providerType === 'anthropic') {
 			url = `${cleanUrl}/v1/messages`;
 			reqBody = JSON.stringify({ model, max_tokens: 1, messages: [{ role: 'user', content: 'hi' }] });
+			reqHeaders = { 'Content-Type': 'application/json', 'x-api-key': apiKey, 'anthropic-version': '2023-06-01' };
 			resp = await fetch(url, {
 				method: 'POST',
-				headers: { 'Content-Type': 'application/json', 'x-api-key': apiKey, 'anthropic-version': '2023-06-01' },
+				headers: reqHeaders,
 				body: reqBody,
 				signal: AbortSignal.timeout(15_000),
 			});
 		} else {
 			url = `${cleanUrl}/chat/completions`;
 			reqBody = JSON.stringify({ model, max_tokens: 1, messages: [{ role: 'user', content: 'hi' }] });
+			reqHeaders = { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` };
 			resp = await fetch(url, {
 				method: 'POST',
-				headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },
+				headers: reqHeaders,
 				body: reqBody,
 				signal: AbortSignal.timeout(15_000),
 			});
@@ -46,6 +50,7 @@ export async function healthCheckKey(
 			const resBody = await resp.text().catch(() => '');
 			console.log(`[health] FAIL provider=${providerName || ''}(${providerType})
 POST ${url}
+headers=${JSON.stringify(reqHeaders)}
 > ${reqBody}
 < HTTP ${resp.status}
 ${resBody.slice(0, 500)}`);

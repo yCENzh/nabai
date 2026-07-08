@@ -218,7 +218,7 @@ async function parseImg(url: string) {
 
 function adjustSchema(schema: any) {
 	const obj = schema[schema.type];
-	delete obj.strict;
+	if (obj) delete obj.strict;
 	return adjustProps(schema);
 }
 
@@ -421,6 +421,8 @@ async function* streamToCanonical(response: Response, req: CanonicalRequest): As
 	let lastReasoning: Record<number, string> = {};
 	let usage: { input_tokens?: number; output_tokens?: number } | undefined;
 
+	let seenFinishReason = false;
+
 	for await (const json of streamSSELines(response, { timeoutMs: STREAM_TIMEOUT_MS })) {
 		let parsed: any;
 		try { parsed = JSON.parse(json); } catch { console.warn('[stream] Invalid JSON chunk:', json); continue; }
@@ -457,10 +459,15 @@ async function* streamToCanonical(response: Response, req: CanonicalRequest): As
 				}
 
 				if (finishReason) {
+					seenFinishReason = true;
 					const fr = parts.some((p: any) => p.functionCall) ? 'tool_calls' : (GEMINI_REASONS_MAP[finishReason] || finishReason);
 					yield { type: 'done', finishReason: fr, usage };
 				}
 			}
 		}
+	}
+
+	if (!seenFinishReason) {
+		yield { type: 'done', finishReason: 'stop', usage };
 	}
 }
