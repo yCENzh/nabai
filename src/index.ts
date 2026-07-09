@@ -76,7 +76,12 @@ app.get('/', (c) => {
 });
 
 app.post('/', async (c) => {
-	const { key } = await c.req.json();
+	let key: string;
+	try {
+		({ key } = await c.req.json());
+	} catch {
+		return c.json({ error: 'Invalid JSON' }, 400);
+	}
 	if (key === c.env.HOME_ACCESS_KEY) {
 		setCookie(c, 'auth-key', key, { maxAge: 60 * 60 * 24 * 30, path: '/', httpOnly: true, secure: true, sameSite: 'Strict' });
 		return c.json({ success: true });

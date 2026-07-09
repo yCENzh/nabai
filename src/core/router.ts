@@ -21,11 +21,11 @@ const CACHE_TTL = 300_000;
 const CACHE_MAX = 1000;
 
 const MODELS_CACHE_TTL = 600_000; // 10 min
-let modelsCache: { data: string[]; ts: number } | null = null;
+const modelsCache = new Map<string, { data: string[]; ts: number }>();
 
 export function clearResolveCache() {
 	resolveCache.clear();
-	modelsCache = null;
+	modelsCache.clear();
 }
 
 export function extractEndpointId(pathname: string): string | null {
@@ -142,8 +142,10 @@ export function buildProvider(type: string, baseUrl: string): Provider {
 }
 
 export function listModels(sql: DurableObjectStorage['sql'], endpointId?: string): string[] {
-	if (modelsCache && Date.now() - modelsCache.ts < MODELS_CACHE_TTL) {
-		return modelsCache.data;
+	const cacheKey = endpointId ?? '__global__';
+	const cached = modelsCache.get(cacheKey);
+	if (cached && Date.now() - cached.ts < MODELS_CACHE_TTL) {
+		return cached.data;
 	}
 
 	let query: string;
@@ -171,6 +173,6 @@ export function listModels(sql: DurableObjectStorage['sql'], endpointId?: string
 	}
 	const rows = Array.from(sql.exec(query, ...bindings).raw<[string]>());
 	const models = rows.map((r: [string]) => r[0]);
-	modelsCache = { data: models, ts: Date.now() };
+	modelsCache.set(cacheKey, { data: models, ts: Date.now() });
 	return models;
 }

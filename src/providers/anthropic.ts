@@ -70,7 +70,9 @@ export class AnthropicProvider implements Provider {
 
 		for (const msg of req.messages ?? []) {
 			if (msg.role === 'system') {
-				system = typeof msg.content === 'string' ? msg.content : undefined;
+				system = typeof msg.content === 'string' ? msg.content
+					: Array.isArray(msg.content) ? msg.content.filter((b: any) => b.type === 'text').map((b: any) => b.text).join('\n')
+					: undefined;
 				continue;
 			}
 
@@ -156,6 +158,7 @@ export class AnthropicProvider implements Provider {
 		if (req.tool_choice) {
 			if (req.tool_choice === 'auto') body.tool_choice = { type: 'auto' };
 			else if (req.tool_choice === 'none') body.tool_choice = { type: 'none' };
+			else if (req.tool_choice === 'required') body.tool_choice = { type: 'any' };
 			else if (typeof req.tool_choice === 'object') body.tool_choice = { type: 'tool', name: req.tool_choice.name };
 		}
 		// If output_config isn't already set natively (via metadata spread),
@@ -186,7 +189,7 @@ export class AnthropicProvider implements Provider {
 			method: 'POST',
 			headers,
 			body: JSON.stringify(body),
-			signal: AbortSignal.timeout(120_000),
+			signal: req.stream ? undefined : AbortSignal.timeout(120_000),
 		});
 		return { response };
 	}

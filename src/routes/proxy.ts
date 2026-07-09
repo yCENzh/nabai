@@ -63,6 +63,7 @@ interface EmbeddingsRequest {
 		method: 'POST',
 		headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
 		body: JSON.stringify({ model: modelName, input: req.input, dimensions: req.dimensions }),
+		signal: AbortSignal.timeout(120_000),
 	});
 	return new Response(response.body, fixCors(response));
 }
@@ -134,11 +135,7 @@ export async function handleOpenAI(
 	};
 	const errHandler = (err: Error) => {
 		console.error(err);
-		const status = err instanceof HttpError ? err.status : 500;
-		return new Response(
-			JSON.stringify({ error: status >= 500 ? 'Internal Server Error' : err.message }),
-			{ status, headers: { 'Content-Type': 'application/json', ...fixCors({}).headers } }
-		);
+		return adapter.renderError(err, { requestId: 'chatcmpl-' + generateId() });
 	};
 
 	switch (true) {
@@ -148,7 +145,7 @@ export async function handleOpenAI(
 		case pathname.endsWith('/embeddings'):
 			assert(request.method === 'POST');
 			try {
-				const body = await request.json();
+				const body = await request.json() as EmbeddingsRequest;
 				return handleEmbeddings(body, apiKey, baseUrl, providerType).catch(errHandler);
 			} catch {
 				return errHandler(new HttpError('Invalid JSON in request body', 400));

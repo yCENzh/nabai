@@ -24,7 +24,7 @@ export async function handleAnthropicMessages(
 				const errText = await upstreamResp.text();
 				console.error('Upstream error:', errText);
 				return anthropicAdapter.renderError(
-					new HttpError(`Upstream error: ${upstreamResp.status}`, upstreamResp.status),
+					new HttpError(errText || `Upstream error: ${upstreamResp.status}`, upstreamResp.status),
 					{ requestId }
 				);
 			}
@@ -44,7 +44,7 @@ export async function handleAnthropicMessages(
 			const errText = await upstreamResp.text();
 			console.error('[anthropic] error:', errText);
 			return anthropicAdapter.renderError(
-				new HttpError(`Upstream error: ${upstreamResp.status}`, upstreamResp.status),
+				new HttpError(errText || `Upstream error: ${upstreamResp.status}`, upstreamResp.status),
 				{ requestId }
 			);
 		}

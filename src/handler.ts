@@ -67,7 +67,7 @@ export class LoadBalancer extends DurableObject {
 			// Endpoints
 			if (pathname === '/api/endpoints' && request.method === 'GET') return handleGetEndpoints(this.ctx.storage.sql);
 			if (pathname === '/api/endpoints' && request.method === 'POST') return handleUpsertEndpoint(request, this.ctx.storage);
-			if (pathname === '/api/endpoints' && request.method === 'DELETE') return handleDeleteEndpoint(request, this.ctx.storage.sql);
+			if (pathname === '/api/endpoints' && request.method === 'DELETE') return handleDeleteEndpoint(request, this.ctx.storage);
 
 			// Models
 			if (pathname === '/api/models' && request.method === 'GET') return handleGetModels(this.ctx.storage.sql);

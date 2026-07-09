@@ -66,7 +66,7 @@ export class AnthropicProtocolAdapter implements ProtocolAdapter {
 		if (body.tool_choice) {
 			if (body.tool_choice.type === 'auto') tool_choice = 'auto';
 			else if (body.tool_choice.type === 'none') tool_choice = 'none';
-			else if (body.tool_choice.type === 'any') tool_choice = 'auto';
+			else if (body.tool_choice.type === 'any') tool_choice = 'required';
 			else if (body.tool_choice.type === 'tool') tool_choice = { type: 'function', name: body.tool_choice.name };
 		}
 
@@ -219,8 +219,10 @@ export class AnthropicProtocolAdapter implements ProtocolAdapter {
 							} else if (hasText) {
 								send('content_block_stop', { type: 'content_block_stop', index: contentIndex });
 								contentIndex++;
-								hasText = false;
-							}
+								hasText = false;						} else if (hasToolUse && event.name) {
+							send('content_block_stop', { type: 'content_block_stop', index: contentIndex });
+							contentIndex++;
+							hasToolUse = false;							}
 							if (event.name) {
 								hasToolUse = true;
 								send('content_block_start', {

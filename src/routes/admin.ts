@@ -391,14 +391,16 @@ export async function handleUpsertEndpoint(request: Request, storage: DurableObj
 	}
 }
 
-export async function handleDeleteEndpoint(request: Request, sql: DurableObjectStorage['sql']): Promise<Response> {
+export async function handleDeleteEndpoint(request: Request, storage: DurableObjectStorage): Promise<Response> {
 	try {
 		const { id } = await request.json() as DeleteBody;
 		if (!id) return jsonResponse({ error: 'id 是必填项' }, 400);
 		if (!validateId(id!)) return jsonResponse({ error: 'ID 只能包含英文字母、数字、下划线和连字符' }, 400);
 		if (id === 'default') return jsonResponse({ error: '默认端点不可删除' }, 400);
-		sql.exec('DELETE FROM endpoint_models WHERE endpoint_id = ?', id);
-		sql.exec('DELETE FROM endpoints WHERE id = ?', id);
+		storage.transactionSync(() => {
+			storage.sql.exec('DELETE FROM endpoint_models WHERE endpoint_id = ?', id);
+			storage.sql.exec('DELETE FROM endpoints WHERE id = ?', id);
+		});
 		return jsonResponse({ message: '端点已删除。' });
 	} catch (error: any) {
 		return jsonResponse({ error: error.message }, 500);
@@ -509,7 +511,7 @@ export async function handleRestore(request: Request, storage: DurableObjectStor
 			for (const ep of data.endpoints) {
 				if (!ep.id) continue;
 				storage.sql.exec(
-					'INSERT INTO endpoints (id, enabled) VALUES (?, ?)',
+					'INSERT OR IGNORE INTO endpoints (id, enabled) VALUES (?, ?)',
 					ep.id, ep.enabled !== false ? 1 : 0
 				);
 			}

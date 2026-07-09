@@ -132,7 +132,7 @@ async function transformMessages(messages: CanonicalMessage[]) {
 async function transformMsg({ content }: { content: string | ContentBlock[] }) {
 	const parts = [];
 	if (!Array.isArray(content)) {
-		parts.push({ text: content });
+		parts.push({ text: content ?? '' });
 		return parts;
 	}
 
@@ -249,9 +249,10 @@ function transformTools(req: any) {
 	if (req.tool_choice) {
 		const allowed_function_names = req.tool_choice?.type === 'function' ? [req.tool_choice?.name] : undefined;
 		if (allowed_function_names || typeof req.tool_choice === 'string') {
+			const mode = req.tool_choice === 'required' ? 'ANY' : (typeof req.tool_choice === 'string' ? req.tool_choice.toUpperCase() : 'ANY');
 			tool_config = {
 				function_calling_config: {
-					mode: allowed_function_names ? 'ANY' : req.tool_choice.toUpperCase(),
+					mode: allowed_function_names ? 'ANY' : mode,
 					allowed_function_names,
 				},
 			};
@@ -410,7 +411,7 @@ export class GeminiProvider implements Provider {
 			method: 'POST',
 			headers: baseHeaders,
 			body: JSON.stringify(body),
-			signal: AbortSignal.timeout(120_000),
+			signal: req.stream ? undefined : AbortSignal.timeout(120_000),
 		});
 
 		return { response };
@@ -455,7 +456,7 @@ async function* streamToCanonical(response: Response, req: CanonicalRequest): As
 				// Emit tool_call_delta for functionCall parts in streaming
 				for (const part of parts) {
 					if (part.functionCall) {
-						yield { type: 'tool_call_delta', id: '', index: cand.index, name: part.functionCall.name, argumentsDelta: JSON.stringify(part.functionCall.args ?? {}) };
+						yield { type: 'tool_call_delta', id: 'call_' + crypto.randomUUID().replace(/-/g, '').substring(0, 24), index: cand.index, name: part.functionCall.name, argumentsDelta: JSON.stringify(part.functionCall.args ?? {}) };
 					}
 				}
 

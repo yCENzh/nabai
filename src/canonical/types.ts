@@ -26,7 +26,7 @@ export interface CanonicalRequest {
 	model: string;
 	messages?: CanonicalMessage[];
 	tools?: CanonicalTool[];
-	tool_choice?: 'auto' | 'none' | { type: 'function'; name: string };
+	tool_choice?: 'auto' | 'none' | 'required' | { type: 'function'; name: string };
 	temperature?: number;
 	top_p?: number;
 	max_tokens?: number;
