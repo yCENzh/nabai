@@ -92,3 +92,11 @@ export async function* streamSSELines(
 		}
 	}
 }
+
+export function createFetchSignal(ctxSignal?: AbortSignal, timeoutMs?: number): AbortSignal | undefined {
+	if (!ctxSignal && !timeoutMs) return undefined;
+	const signals: AbortSignal[] = [];
+	if (ctxSignal) signals.push(ctxSignal);
+	if (timeoutMs) signals.push(AbortSignal.timeout(timeoutMs));
+	return signals.length === 1 ? signals[0] : AbortSignal.any(signals);
+}

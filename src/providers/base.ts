@@ -4,6 +4,7 @@ export interface ProviderContext {
 	apiKey: string;
 	requestHeaders?: Headers;
 	queryParams?: URLSearchParams;
+	signal?: AbortSignal;
 }
 
 export interface Provider {

@@ -1,4 +1,4 @@
-import { streamSSELines, STREAM_TIMEOUT_MS } from '../core/utils';
+import { streamSSELines, STREAM_TIMEOUT_MS, createFetchSignal } from '../core/utils';
 import type { CanonicalRequest, CanonicalResponse, CanonicalStreamEvent, ContentBlock } from '../canonical/types';
 import type { Provider, ProviderContext } from './base';
 
@@ -123,7 +123,7 @@ export class OpenAICompatProvider implements Provider {
 			method: 'POST',
 			headers,
 			body: JSON.stringify(body),
-			signal: req.stream ? undefined : AbortSignal.timeout(120_000),
+			signal: createFetchSignal(ctx.signal, req.stream ? undefined : 120_000),
 		});
 		return { response };
 	}

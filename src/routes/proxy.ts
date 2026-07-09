@@ -10,7 +10,7 @@ interface EmbeddingsRequest {
 	dimensions?: number;
 }
 
-	async function handleEmbeddings(req: EmbeddingsRequest, apiKey: string, baseUrl: string, providerType: string) {
+async function handleEmbeddings(req: EmbeddingsRequest, apiKey: string, baseUrl: string, providerType: string) {
 	if (providerType === 'anthropic') {
 		throw new HttpError('Anthropic does not support embeddings', 400);
 	}
@@ -34,6 +34,7 @@ interface EmbeddingsRequest {
 					outputDimensionality: req.dimensions,
 				})),
 			}),
+			signal: AbortSignal.timeout(120_000),
 		});
 
 		let responseBody: BodyInit | null = response.body;

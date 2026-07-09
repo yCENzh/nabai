@@ -155,9 +155,7 @@ function confirmModal(title, body, buttons) {
 		} catch (err) { toast('请求失败', true); }
 	});
 
-	let editingProvider = false;
 	function cancelProviderEdit() {
-		editingProvider = false;
 		providerForm.reset();
 		document.getElementById('pf-enabled').checked = true;
 		document.getElementById('provider-submit-btn').textContent = '保存';
@@ -210,7 +208,6 @@ function confirmModal(title, body, buttons) {
 			else toast('删除失败: ' + (result.error || ''), true);
 		}
 		if (btn.classList.contains('edit-provider')) {
-			editingProvider = true;
 			document.getElementById('pf-id').value = btn.dataset.id;
 			document.getElementById('pf-id').disabled = true;
 			document.getElementById('pf-type').value = btn.dataset.type;
@@ -284,7 +281,8 @@ function confirmModal(title, body, buttons) {
 			{ label: '确定删除', value: true, danger: true },
 		]);
 		if (!ok) return;
-		await fetch('/api/keys', { method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ keys }) });
+		const resp = await fetch('/api/keys', { method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ keys }) });
+		if (!resp.ok) { const err = await resp.json(); toast('删除失败: ' + (err.error || ''), true); return; }
 		loadKeys();
 	});
 	document.getElementById('check-keys-btn').addEventListener('click', async () => {
@@ -447,9 +445,7 @@ function confirmModal(title, body, buttons) {
 		else toast('保存失败: ' + (result.error || ''), true);
 	});
 
-	let editingEndpoint = false;
 	function cancelEndpointEdit() {
-		editingEndpoint = false;
 		endpointForm.reset();
 		document.getElementById('ef-enabled').checked = true;
 		document.getElementById('endpoint-submit-btn').textContent = '保存';
@@ -469,11 +465,11 @@ function confirmModal(title, body, buttons) {
 				{ label: '确定删除', value: true, danger: true },
 			]);
 			if (!ok) return;
-			await fetch('/api/endpoints', { method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: btn.dataset.id }) });
+			const resp = await fetch('/api/endpoints', { method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: btn.dataset.id }) });
+			if (!resp.ok) { const err = await resp.json(); toast('删除失败: ' + (err.error || ''), true); return; }
 			loadEndpoints();
 		}
 		if (btn.classList.contains('edit-endpoint')) {
-			editingEndpoint = true;
 			document.getElementById('ef-id').value = btn.dataset.id;
 			document.getElementById('ef-id').disabled = true;
 			updatePathPreview(btn.dataset.id);
@@ -509,7 +505,6 @@ function confirmModal(title, body, buttons) {
 	const modelTagsContainer = document.getElementById('mf-model-tags');
 	const modelTagInput = document.getElementById('mf-model-input');
 	const modelsTableBody = document.querySelector('#models-table tbody');
-	let editingModel = null;
 	let modelTags = [];
 
 	function renderModelTags() {
@@ -601,7 +596,6 @@ function confirmModal(title, body, buttons) {
 	}
 
 	function cancelModelEdit() {
-		editingModel = null;
 		modelTags = [];
 		modelTagInput.value = '';
 		renderModelTags();
@@ -638,12 +632,12 @@ function confirmModal(title, body, buttons) {
 				{ label: '确定删除', value: true, danger: true },
 			]);
 			if (!ok) return;
-			await fetch('/api/models', { method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ model: btn.dataset.model }) });
+			const resp = await fetch('/api/models', { method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ model: btn.dataset.model }) });
+			if (!resp.ok) { const err = await resp.json(); toast('删除失败: ' + (err.error || ''), true); return; }
 			loadModels();
 			loadEndpoints();
 		}
 		if (btn.classList.contains('edit-model')) {
-			editingModel = btn.dataset.model;
 			modelTags = [btn.dataset.model];
 			modelTagInput.value = '';
 			renderModelTags();

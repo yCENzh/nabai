@@ -27,23 +27,8 @@ interface UpsertProviderBody {
 	id: string; type: string; name: string; base_url: string;
 	enabled?: boolean; config_json?: string;
 }
-interface ApiKeysBody {
-	keys: string[]; provider_ids?: string[]; health_check_enabled?: boolean;
-}
-interface UpdateApiKeyBody {
-	api_key: string; provider_ids?: string[]; health_check_enabled?: boolean;
-}
-interface ToggleApiKeysBody {
-	keys: string[]; enabled: boolean;
-}
 interface DeleteBody {
 	id?: string;
-}
-interface DeleteKeysBody {
-	keys: string[];
-}
-interface UpsertModelBody {
-	model?: string; keys?: string[];
 }
 interface UpsertEndpointBody {
 	id?: string; models?: string[]; enabled?: boolean;

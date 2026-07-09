@@ -19,7 +19,7 @@ export async function handleAnthropicMessages(
 		console.log(`[proxy] stream=${isStream} tools=${canonical.tools?.length ?? 0} provider=${providerName}(${provider.type}) model=${canonical.model}`);
 
 		if (!isStream) {
-			const { response: upstreamResp } = await provider.invoke(canonical, { apiKey, queryParams, requestHeaders: request.headers });
+			const { response: upstreamResp } = await provider.invoke(canonical, { apiKey, queryParams, requestHeaders: request.headers, signal: request.signal });
 			if (!upstreamResp.ok) {
 				const errText = await upstreamResp.text();
 				console.error('Upstream error:', errText);
@@ -39,7 +39,7 @@ export async function handleAnthropicMessages(
 			return anthropicAdapter.renderJson(canonicalResp, { requestId });
 		}
 
-		const { response: upstreamResp } = await provider.invoke(canonical, { apiKey, queryParams, requestHeaders: request.headers });
+		const { response: upstreamResp } = await provider.invoke(canonical, { apiKey, queryParams, requestHeaders: request.headers, signal: request.signal });
 		if (!upstreamResp.ok) {
 			const errText = await upstreamResp.text();
 			console.error('[anthropic] error:', errText);
